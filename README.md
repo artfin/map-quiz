@@ -16,6 +16,7 @@ The application needs `resources` to be present in the folder.
 - `Mouse right button` -- drag map
 - `Mouse wheel` -- zoom 
 - `r` -- restart quiz
+- `l` -- learning mode
 - `q` -- quit 
 
 ## Dependencies

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include <limits.h>
 
 // implementation added to raylib.h
 #include "stb_image.h"
@@ -25,6 +26,7 @@
 
 #define BACKGROUND_COLOR 0x181818AA
 #define PROVINCE_CORRECT_COLOR 0xE9E9E9AA
+#define PROVINCE_LEARN_COLOR 0xE9E9E9AA
 
 unsigned long rgb_to_hex(int r, int g, int b) {   
     return ((r & 0xff) << 16) + ((g & 0xff) << 8) + (b & 0xff);
@@ -33,6 +35,7 @@ unsigned long rgb_to_hex(int r, int g, int b) {
 typedef struct {
     unsigned long key;
     char* value;
+    Vector2 center;
     bool guessed;
 } Province;
     
@@ -85,9 +88,16 @@ typedef struct {
     
 static size_t error_counter = 0;
 
+void reset_provinces() {
+    for (int i = 0; i < hmlen(PROVINCES); ++i) {
+        PROVINCES[i].guessed = false;
+    }
+}
+
 void quiz(GameState *state, Rec *rec, Texture *texture, Camera2D *camera, Province **hidden_province)
 {
     static bool draw_wrong_msg = false;
+    Province *p;
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), *camera);
@@ -109,9 +119,11 @@ void quiz(GameState *state, Rec *rec, Texture *texture, Camera2D *camera, Provin
             printf("Click is inside! imgx = %d; imgy = %d; color: (%d, %d, %d, %d) => #%06lx\n", 
                     imgx, imgy, c.r, c.g, c.b, c.a, hex);
 
-            char* clicked_province = hmget(PROVINCES, hex);
-            if (clicked_province != NULL) {
-                if (strcmp(clicked_province, (*hidden_province)->value) == 0) {
+            int i = hmgeti(PROVINCES, hex);
+            if (i != -1) {
+                p = &PROVINCES[i];
+
+                if (strcmp(p->value, (*hidden_province)->value) == 0) {
                     //printf("Province name = %s\n", province_name);
 
                     for (int px = 0; px < color_image.width; ++px) {
@@ -195,6 +207,130 @@ void victory(GameState *state, Rec *rec)
     BeginShaderMode(shader);
     DrawTextEx(font, "Victory!", pos, HUD_LARGE_FONTSIZE, 0, GREEN);
     EndShaderMode();
+}
+
+void learn(GameState *state, Rec *rec, Texture *texture, Camera2D *camera)
+{
+    const char* text = "Learn provinces"; 
+    Vector2 text_len = MeasureTextEx(font, text, HUD_DEFAULT_FONTSIZE, 0);
+    
+    Vector2 title_pos = CLITERAL(Vector2) {
+        rec->ul.x + 0.5 * DEFAULT_IMAGE_SCALE*rec->width - 0.5*text_len.x, 
+        rec->ul.y + 0.01 * DEFAULT_IMAGE_SCALE*rec->height
+    };
+
+    BeginShaderMode(shader);
+    DrawTextEx(font, text, title_pos, HUD_DEFAULT_FONTSIZE, 0, WHITE);
+    EndShaderMode();
+   
+    static bool show_warning_msg = false;
+    static bool show_province_name = false;
+    
+    static Province *p = NULL;
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), *camera);
+
+        printf("mouse.x: %.5lf; mouse.y: %.5lf\n", mouse.x, mouse.y);
+        DrawCircle(mouse.x, mouse.y, 10.0, RED);
+
+        printf("ul_corner: (%.5lf, %.5lf); lr_corner: (%.5lf, %.5lf)\n", rec->ul.x, rec->ul.y, rec->lr.x, rec->lr.y);
+
+        if ( (mouse.x < rec->ul.x) || (mouse.x > rec->lr.x) || (mouse.y < rec->ul.y) || (mouse.y > rec->lr.y)) {
+            printf("Click is outside the image!\n");
+        } else {
+            int imgx = (int) ( (mouse.x - (GetScreenWidth()/2 - DEFAULT_IMAGE_SCALE*rec->width/2)) / DEFAULT_IMAGE_SCALE);
+            int imgy = (int) ( (mouse.y - (GetScreenHeight()/2 - DEFAULT_IMAGE_SCALE*rec->height/2)) / DEFAULT_IMAGE_SCALE);
+            Color c = GetImageColor(color_image, imgx, imgy);
+            unsigned long hex = rgb_to_hex(c.r, c.g, c.b);
+
+            printf("Click is inside! imgx = %d; imgy = %d; color: (%d, %d, %d, %d) => #%06lx\n", 
+                    imgx, imgy, c.r, c.g, c.b, c.a, hex);
+
+            int i = hmgeti(PROVINCES, hex);
+
+            if (i != -1) {
+                p = &PROVINCES[i];
+
+                int min_x = INT_MAX;
+                int max_x = INT_MIN;
+                int min_y = INT_MAX;
+                int max_y = INT_MIN;
+
+                for (int px = 0; px < color_image.width; ++px) {
+                    for (int py = 0; py < color_image.height; ++py) {
+                        Color current_color = GetImageColor(color_image, px, py);
+
+                        if ((current_color.r == c.r) && 
+                            (current_color.g == c.g) && 
+                            (current_color.b == c.b) && 
+                            (current_color.a == c.a)) {
+
+                            ImageDrawPixel(&black_white_image, px, py, GetColor(PROVINCE_LEARN_COLOR));
+                            if (px > max_x) max_x = px;
+                            if (px < min_x) min_x = px;
+                            if (py > max_y) max_y = py;
+                            if (py < min_y) min_y = py;
+                        }
+                    }
+                }
+                
+                UnloadTexture(*texture);
+                *texture = LoadTextureFromImage(black_white_image);
+
+                p->center = CLITERAL(Vector2) {
+                    0.5 * (min_x + max_x) * DEFAULT_IMAGE_SCALE,
+                    0.5 * (min_y + max_y) * DEFAULT_IMAGE_SCALE
+                };
+
+                show_province_name = true;
+
+                printf("min_x: %d; max_x: %d\n", min_x, max_x);
+                printf("min_y: %d; max_y: %d\n", min_y, max_y);
+                
+            } else {
+                show_warning_msg = true;
+            }
+        }
+    }
+
+    static float warning_msg_lifetime = HUD_LIFETIME;
+
+    if (show_warning_msg) {
+        warning_msg_lifetime -= GetFrameTime();
+
+        if (warning_msg_lifetime > 0) {
+            const char* text = "Click a province"; 
+            Vector2 text_len = MeasureTextEx(font, text, HUD_LARGE_FONTSIZE, 0);
+
+            Vector2 title_pos = CLITERAL(Vector2) {
+                rec->ul.x + 0.5 * DEFAULT_IMAGE_SCALE*rec->width - 0.5*text_len.x, 
+                rec->ul.y + 0.5 * DEFAULT_IMAGE_SCALE*rec->height - 0.5*text_len.y
+            };
+
+            BeginShaderMode(shader);
+            DrawTextEx(font, text, title_pos, HUD_LARGE_FONTSIZE, 0, RED);
+            EndShaderMode();
+        } else {
+            warning_msg_lifetime = HUD_LIFETIME;
+            show_warning_msg = false;
+        }
+    }
+
+    static float province_name_lifetime = HUD_LIFETIME;
+
+    if (show_province_name) {
+        province_name_lifetime -= GetFrameTime();
+
+        if (province_name_lifetime > 0) {
+            BeginShaderMode(shader);
+            DrawTextEx(font, TextFormat("%s", p->value), p->center, 60, 0, RED);
+            EndShaderMode();
+        } else {
+            province_name_lifetime = HUD_LIFETIME;
+            show_province_name = false;
+        }
+    }
 }
 
 int main()
@@ -289,16 +425,25 @@ int main()
             black_white_image = LoadImage(black_white_map_filename);
             map_texture = LoadTextureFromImage(black_white_image);
     
-            for (int i = 0; i < hmlen(PROVINCES); ++i) {
-                PROVINCES[i].guessed = false;
-            }
-   
-            error_counter = 0; 
+            reset_provinces();
+
             hidden_province = select_random_province();
+            error_counter = 0; 
 
             state = QUIZ;
         }
+           
+        if (IsKeyDown(KEY_L)) {
+            black_white_image = LoadImage(black_white_map_filename);
+            map_texture = LoadTextureFromImage(black_white_image);
             
+            reset_provinces();
+            error_counter = 0;
+            hidden_province = NULL;
+        
+            state = LEARN;
+        }
+
         if (IsKeyDown(KEY_S)) {
             printf("cam.offset.x: %.5lf; cam.offset.y: %.5lf\n", camera.offset.x, camera.offset.y);
             printf("cam.target.x: %.5lf; cam.target.y: %.5lf\n", camera.target.x, camera.target.y);
@@ -359,7 +504,7 @@ int main()
             }
 
             case LEARN: {
-                assert(false);
+                learn(&state, &rec, &map_texture, &camera); 
                 break;
             }
         }
