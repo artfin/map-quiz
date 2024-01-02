@@ -1,3 +1,6 @@
+// TODO: support for utf-8 (brazilian accents)?
+// TODO: try cross-platform compilation
+
 #include <stdio.h>
 #include <time.h>
 #include <limits.h>
@@ -68,11 +71,99 @@ Province* select_random_province()
     return p;
 }
 
+const char* COLOR_MAP_MEXICO_FILENAME = "resources/mexico-colored.png";
+const char* BW_MAP_MEXICO_FILENAME    = "resources/mexico-black-white.png";
+
+const char* COLOR_MAP_BRAZIL_FILENAME = "resources/brazil-colored.png";
+const char* BW_MAP_BRAZIL_FILENAME    = "resources/brazil-black-white.png";
+
+void fill_mexico_states() {
+    hmfree(PROVINCES);
+    hmput(PROVINCES, 0x00ffff, "Baja California");
+    hmput(PROVINCES, 0x808080, "Baja California Sur"); 
+    hmput(PROVINCES, 0x800000, "Sonora");
+    hmput(PROVINCES, 0x808000, "Chihuahua");
+    hmput(PROVINCES, 0x008000, "Coahuila");
+    hmput(PROVINCES, 0x000080, "Nuevo Leon");
+    hmput(PROVINCES, 0xff00ff, "Tamaulipas");
+    hmput(PROVINCES, 0xff0000, "Sinaloa");
+    hmput(PROVINCES, 0xffff00, "Durango");
+    hmput(PROVINCES, 0x00ff00, "Zacatecas");
+    hmput(PROVINCES, 0x0000ff, "San Luis Potosi");
+    hmput(PROVINCES, 0x6bd4bf, "Veracruz");
+    hmput(PROVINCES, 0x008080, "Nayarit");
+    hmput(PROVINCES, 0xe94f37, "Jalisco");
+    hmput(PROVINCES, 0x004040, "Colima");
+    hmput(PROVINCES, 0x808040, "Michoacan");
+    hmput(PROVINCES, 0x80ffff, "Guerrero");
+    hmput(PROVINCES, 0xb04f89, "Oaxaca"); 
+    hmput(PROVINCES, 0x2d534e, "Chiapas"); 
+    hmput(PROVINCES, 0x9a83bc, "Tabasco"); 
+    hmput(PROVINCES, 0x804000, "Puebla"); 
+    hmput(PROVINCES, 0xb18e93, "Campeche"); 
+    hmput(PROVINCES, 0xd2bead, "Yucatan"); 
+    hmput(PROVINCES, 0xf4948b, "Quintana Roo"); 
+    hmput(PROVINCES, 0xff0080, "Mexico City"); 
+    hmput(PROVINCES, 0xffff80, "Aguascalientes"); 
+    hmput(PROVINCES, 0x800080, "Guanajuato"); 
+    hmput(PROVINCES, 0x0080ff, "Queretaro"); 
+    hmput(PROVINCES, 0x004080, "Hidalgo"); 
+    hmput(PROVINCES, 0x00ff80, "State of Mexico"); 
+    hmput(PROVINCES, 0x4000ff, "Morelos"); 
+    hmput(PROVINCES, 0xff8040, "Tlaxcala"); 
+    assert(hmlen(PROVINCES) == 32);
+    
+    for (int i = 0; i < hmlen(PROVINCES); ++i) {
+        PROVINCES[i].guessed = false;
+    }
+}
+
+void fill_brazil_states() {
+    hmfree(PROVINCES);
+    hmput(PROVINCES, 0x808080, "Acre");
+    hmput(PROVINCES, 0x008000, "Rondonia");
+    hmput(PROVINCES, 0x800000, "Amazonas");
+    hmput(PROVINCES, 0xff0000, "Roraima");
+    hmput(PROVINCES, 0x808000, "Para");
+    hmput(PROVINCES, 0xffff00, "Amapa");
+    hmput(PROVINCES, 0x00ff00, "Mato Grosso");
+    hmput(PROVINCES, 0xff8040, "Mato Grosso Do Sul");
+    hmput(PROVINCES, 0x00ffff, "Maranhao");
+    hmput(PROVINCES, 0x008080, "Tocantins");
+    hmput(PROVINCES, 0x000080, "Goias");
+    hmput(PROVINCES, 0x800080, "Piaui");
+    hmput(PROVINCES, 0xff00ff, "Ceara");
+    hmput(PROVINCES, 0x808040, "Rio Grande do Norte");
+    hmput(PROVINCES, 0xffff80, "Paraiba");
+    hmput(PROVINCES, 0x004040, "Pernambuco");
+    hmput(PROVINCES, 0x80ffff, "Alagoas");
+    hmput(PROVINCES, 0x004080, "Sergipe");
+    hmput(PROVINCES, 0x8080ff, "Bahia");
+    hmput(PROVINCES, 0x4000ff, "Minas Gerais");
+    hmput(PROVINCES, 0x00272b, "Espirito Santo");
+    hmput(PROVINCES, 0xff665b, "Rio de Janeiro");
+    hmput(PROVINCES, 0x804000, "Sao Paulo");
+    hmput(PROVINCES, 0xd5c619, "Parana");
+    hmput(PROVINCES, 0x192a51, "Santa Catarina");
+    hmput(PROVINCES, 0xe3dc95, "Rio Grande do Sul");
+    hmput(PROVINCES, 0xff0080, "Federal District");
+    assert(hmlen(PROVINCES) == 27);
+    
+    for (int i = 0; i < hmlen(PROVINCES); ++i) {
+        PROVINCES[i].guessed = false;
+    }
+}
+
 typedef enum {
     QUIZ = 0,
     VICTORY,
     LEARN,
 } GameState; 
+
+typedef enum {
+    MAP_MEXICO,
+    MAP_BRAZIL
+} ActiveMap;
 
 Font font = {0};
 Shader shader = {0};
@@ -80,8 +171,8 @@ Image color_image = {0};
 Image black_white_image = {0}; 
 
 typedef struct {
-    Vector2 ul; 
-    Vector2 lr;
+    Vector2 ul; // upper-left 
+    Vector2 lr; // lower-right
     float width;
     float height;
 } Rec;
@@ -338,43 +429,7 @@ int main()
     srand(time(NULL));
     stbds_rand_seed(time(NULL));
 
-    hmput(PROVINCES, 0x00ffff, "Baja California");
-    hmput(PROVINCES, 0x808080, "Baja California Sur"); 
-    hmput(PROVINCES, 0x800000, "Sonora");
-    hmput(PROVINCES, 0x808000, "Chihuahua");
-    hmput(PROVINCES, 0x008000, "Coahuila");
-    hmput(PROVINCES, 0x000080, "Nuevo Leon");
-    hmput(PROVINCES, 0xff00ff, "Tamaulipas");
-    hmput(PROVINCES, 0xff0000, "Sinaloa");
-    hmput(PROVINCES, 0xffff00, "Durango");
-    hmput(PROVINCES, 0x00ff00, "Zacatecas");
-    hmput(PROVINCES, 0x0000ff, "San Luis Potosi");
-    hmput(PROVINCES, 0x6bd4bf, "Veracruz");
-    hmput(PROVINCES, 0x008080, "Nayarit");
-    hmput(PROVINCES, 0xe94f37, "Jalisco");
-    hmput(PROVINCES, 0x004040, "Colima");
-    hmput(PROVINCES, 0x808040, "Michoacan");
-    hmput(PROVINCES, 0x80ffff, "Guerrero");
-    hmput(PROVINCES, 0xb04f89, "Oaxaca"); 
-    hmput(PROVINCES, 0x2d534e, "Chiapas"); 
-    hmput(PROVINCES, 0x9a83bc, "Tabasco"); 
-    hmput(PROVINCES, 0x804000, "Puebla"); 
-    hmput(PROVINCES, 0xb18e93, "Campeche"); 
-    hmput(PROVINCES, 0xd2bead, "Yucatan"); 
-    hmput(PROVINCES, 0xf4948b, "Quintana Roo"); 
-    hmput(PROVINCES, 0xff0080, "Mexico City"); 
-    hmput(PROVINCES, 0xffff80, "Aguascalientes"); 
-    hmput(PROVINCES, 0x800080, "Guanajuato"); 
-    hmput(PROVINCES, 0x0080ff, "Queretaro"); 
-    hmput(PROVINCES, 0x004080, "Hidalgo"); 
-    hmput(PROVINCES, 0x00ff80, "State of Mexico"); 
-    hmput(PROVINCES, 0x4000ff, "Morelos"); 
-    hmput(PROVINCES, 0xff8040, "Tlaxcala"); 
-    assert(hmlen(PROVINCES) == 32);
-
-    for (int i = 0; i < hmlen(PROVINCES); ++i) {
-        PROVINCES[i].guessed = false;
-    }
+    fill_mexico_states();
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
@@ -401,13 +456,11 @@ int main()
 
     RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
     SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
-    
-    const char* color_map_filename = "resources/mexico-colored.png"; 
-    const char* black_white_map_filename = "resources/mexico-black-white.png";
 
-    color_image = LoadImage(color_map_filename);
-    black_white_image = LoadImage(black_white_map_filename);
-    
+    color_image = LoadImage(COLOR_MAP_MEXICO_FILENAME);
+    black_white_image = LoadImage(BW_MAP_MEXICO_FILENAME);
+    assert((color_image.width == black_white_image.width) && (color_image.height == black_white_image.height));
+
     printf("(color_image) width = %d, height = %d\n", color_image.width, color_image.height);
     printf("(bw_image) width = %d, height = %d\n", black_white_image.width, black_white_image.height);
 
@@ -419,10 +472,16 @@ int main()
     camera.zoom = 1.0; 
 
     GameState state = QUIZ;
+    ActiveMap active_map = MAP_MEXICO; 
 
     while (!WindowShouldClose()) {
         if (IsKeyDown(KEY_R)) {
-            black_white_image = LoadImage(black_white_map_filename);
+            if (active_map == MAP_MEXICO) {
+                black_white_image = LoadImage(BW_MAP_MEXICO_FILENAME);
+            } else if (active_map == MAP_BRAZIL) {
+                black_white_image = LoadImage(BW_MAP_BRAZIL_FILENAME);
+            }
+
             map_texture = LoadTextureFromImage(black_white_image);
     
             reset_provinces();
@@ -434,7 +493,12 @@ int main()
         }
            
         if (IsKeyDown(KEY_L)) {
-            black_white_image = LoadImage(black_white_map_filename);
+            if (active_map == MAP_MEXICO) {
+                black_white_image = LoadImage(BW_MAP_MEXICO_FILENAME);
+            } else if (active_map == MAP_BRAZIL) {
+                black_white_image = LoadImage(BW_MAP_BRAZIL_FILENAME);
+            }
+
             map_texture = LoadTextureFromImage(black_white_image);
             
             reset_provinces();
@@ -481,6 +545,19 @@ int main()
         float posy = GetScreenHeight()/2 - DEFAULT_IMAGE_SCALE * map_texture.height/2;
         DrawTextureEx(map_texture, CLITERAL(Vector2){posx, posy}, 0.0, DEFAULT_IMAGE_SCALE, WHITE);
 
+        // TODO: add more structure to this?
+        Rectangle menu_entry_mexico = CLITERAL(Rectangle) { 20.0, 20.0, 150.0, 100.0 }; 
+        DrawRectangleRounded(menu_entry_mexico, 0.5, 10, RED);
+        BeginShaderMode(shader);
+        DrawTextEx(font, "Mexico", CLITERAL(Vector2) {50.0, 45.0}, 50, 0, WHITE);
+        EndShaderMode();
+
+        Rectangle menu_entry_brazil = CLITERAL(Rectangle) { 20.0, 170.0, 150.0, 100.0 }; 
+        DrawRectangleRounded(menu_entry_brazil, 0.5, 10, RED);
+        BeginShaderMode(shader);
+        DrawTextEx(font, "Brazil", CLITERAL(Vector2) {50.0, 200.0}, 50, 0, WHITE);
+        EndShaderMode();
+        
         Rec rec = (Rec) {
             .ul = CLITERAL(Vector2) {posx, posy},
             .lr = CLITERAL(Vector2) { 
@@ -490,7 +567,46 @@ int main()
             .width = map_texture.width,
             .height = map_texture.height
         }; 
- 
+
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+
+            if (CheckCollisionPointRec(mouseWorldPos, menu_entry_mexico) && (active_map == MAP_BRAZIL)) {
+                active_map = MAP_MEXICO;
+                UnloadTexture(map_texture);
+
+                color_image = LoadImage(COLOR_MAP_MEXICO_FILENAME);
+                black_white_image = LoadImage(BW_MAP_MEXICO_FILENAME);
+                assert((color_image.width == black_white_image.width) && (color_image.height == black_white_image.height));
+    
+                map_texture = LoadTextureFromImage(black_white_image);
+           
+                fill_mexico_states();
+                hidden_province = select_random_province();
+                error_counter = 0; 
+
+                state = QUIZ;
+            }
+
+            if (CheckCollisionPointRec(mouseWorldPos, menu_entry_brazil) && (active_map == MAP_MEXICO)) {
+                active_map = MAP_BRAZIL;
+                UnloadTexture(map_texture);
+
+                color_image = LoadImage(COLOR_MAP_BRAZIL_FILENAME);
+                black_white_image = LoadImage(BW_MAP_BRAZIL_FILENAME);
+                assert((color_image.width == black_white_image.width) && (color_image.height == black_white_image.height));
+    
+                map_texture = LoadTextureFromImage(black_white_image);
+                
+                fill_brazil_states();
+                hidden_province = select_random_province();
+                error_counter = 0; 
+                
+                state = QUIZ;
+            }
+        }
+        
+
         switch (state) 
         {
             case QUIZ: {
@@ -498,13 +614,13 @@ int main()
                 break;
             }
 
-            case VICTORY: {
-                victory(&state, &rec);
-                break;
-            }
-
             case LEARN: {
                 learn(&state, &rec, &map_texture, &camera); 
+                break;
+            }
+            
+            case VICTORY: {
+                victory(&state, &rec);
                 break;
             }
         }
