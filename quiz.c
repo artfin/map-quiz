@@ -10,7 +10,13 @@
 #include "raylib.h"
 #include "raymath.h"
 
-#define FONT_SIZE_LOAD 64
+#if defined(PLATFORM_DESKTOP)
+   #define GLSL_VERSION 330
+#else 
+   #define GLSL_VERSION 100
+#endif
+
+#define FONT_SIZE_LOAD 160 
 
 #define HUD_LIFETIME 0.7 
 #define HUD_DEFAULT_FONTSIZE 40
@@ -110,9 +116,24 @@ int main()
     SetTargetFPS(60);
     SetExitKey(KEY_Q);
 
-    Font font = LoadFontEx("./resources/Alegreya-Regular.ttf", FONT_SIZE_LOAD, NULL, 0);
-    GenTextureMipmaps(&font.texture);
+    int fileSize = 0;
+    unsigned char* fileData = LoadFileData("resources/Alegreya-Regular.ttf", &fileSize);
+
+    Font font = {0};
+    font.baseSize = FONT_SIZE_LOAD;
+    font.glyphCount = 95;
+    font.glyphs = LoadFontData(fileData, fileSize, FONT_SIZE_LOAD, 0, 95, FONT_SDF);
+    Image atlas = GenImageFontAtlas(font.glyphs, &font.recs, 95, FONT_SIZE_LOAD, 4, 0);
+    font.texture = LoadTextureFromImage(atlas);
+    UnloadImage(atlas);
+
+    UnloadFileData(fileData);
+    
+    Shader shader = LoadShader(0, TextFormat("resources/shaders/glsl%i/sdf.fs", GLSL_VERSION));
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
+
+    RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
+    SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
     
     const char* color_map_filename = "resources/mexico-colored.png"; 
     const char* black_white_map_filename = "resources/mexico-black-white.png";
@@ -127,9 +148,6 @@ int main()
 
     Province* hidden_province = select_random_province();
     
-    const size_t BUFFER_SIZE = 100;
-    char buffer[BUFFER_SIZE];
-
     float lifetime_wrong_msg = HUD_LIFETIME; 
     bool draw_wrong_msg = false;
     bool draw_victory_msg = false;
@@ -138,8 +156,6 @@ int main()
 
     Camera2D cam = {0};
     cam.zoom = 1.0; 
-    
-    RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
 
     while (!WindowShouldClose()) {
 
@@ -251,28 +267,22 @@ int main()
         }
 
         if (hidden_province != NULL) {
-            memset(buffer, 0, BUFFER_SIZE);
-
-            int n = snprintf(buffer, BUFFER_SIZE, "Find '%s'", hidden_province->value);
-            assert(n == 7 + strlen(hidden_province->value));
-
-            Vector2 pos = CLITERAL(Vector2) {
+            Vector2 pos_find_str = CLITERAL(Vector2) {
                 ul_corner.x + 0.03 * DEFAULT_IMAGE_SCALE*texture.width,
                 ul_corner.y + 0.01 * DEFAULT_IMAGE_SCALE*texture.height
             };
-
-            DrawTextEx(font, buffer, pos, HUD_DEFAULT_FONTSIZE, 0, WHITE);
             
-            memset(buffer, 0, BUFFER_SIZE);
-            n = snprintf(buffer, BUFFER_SIZE, "Error counter: %ld", error_counter);
-            // TODO: error check `snprintf`
-
-            pos = CLITERAL(Vector2) {
+            Vector2 pos_errors_str = CLITERAL(Vector2) {
                 ul_corner.x + 0.75 * DEFAULT_IMAGE_SCALE*texture.width, 
                 ul_corner.y + 0.01 * DEFAULT_IMAGE_SCALE*texture.height
             };
-
-            DrawTextEx(font, buffer, pos, HUD_DEFAULT_FONTSIZE, 0, WHITE);
+            
+            BeginShaderMode(shader);
+                DrawTextEx(font, TextFormat("Find '%s'", hidden_province->value), 
+                           pos_find_str, HUD_DEFAULT_FONTSIZE, 0, WHITE);
+                DrawTextEx(font, TextFormat("Error counter: %ld", error_counter), 
+                           pos_errors_str, HUD_DEFAULT_FONTSIZE, 0, WHITE);
+            EndShaderMode();
         } 
 
         if (draw_wrong_msg) {
@@ -284,7 +294,10 @@ int main()
                     ul_corner.x + 0.4 * DEFAULT_IMAGE_SCALE*texture.width,
                     ul_corner.y + 0.5 * DEFAULT_IMAGE_SCALE*texture.height 
                 };
-                DrawTextEx(font, "Wrong!", pos, HUD_LARGE_FONTSIZE, 0, RED);
+
+                BeginShaderMode(shader);
+                    DrawTextEx(font, "Wrong!", pos, HUD_LARGE_FONTSIZE, 0, RED);
+                EndShaderMode();
             } else {
                 draw_wrong_msg = false;
                 lifetime_wrong_msg = HUD_LIFETIME;
@@ -296,7 +309,10 @@ int main()
                 ul_corner.x + 0.4 * DEFAULT_IMAGE_SCALE*texture.width,
                 ul_corner.y + 0.5 * DEFAULT_IMAGE_SCALE*texture.height 
             };
-            DrawTextEx(font, "Victory!", pos, HUD_LARGE_FONTSIZE, 0, GREEN);
+
+            BeginShaderMode(shader);
+                DrawTextEx(font, "Victory!", pos, HUD_LARGE_FONTSIZE, 0, GREEN);
+            EndShaderMode();
         }
 
         EndMode2D();
@@ -312,11 +328,14 @@ int main()
                 
         EndDrawing();
     } 
-    
+
+    UnloadFont(font);    
     UnloadTexture(texture); 
     UnloadImage(color_image);
     UnloadImage(black_white_image);
     UnloadRenderTexture(canvas);
+    UnloadShader(shader);
+
     CloseWindow();
 
     return 0;
