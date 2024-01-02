@@ -8,12 +8,15 @@ A simple quiz to learn states of Mexico.
 $ ./build.sh && ./quiz
 ```
 
+The application needs `resources` to be present in the folder. 
+
 ## Controls
 
 - `Mouse left button` -- select state
 - `Mouse right button` -- drag map
 - `Mouse wheel` -- zoom 
-- `r` -- restart quiz 
+- `r` -- restart quiz
+- `q` -- quit 
 
 ## Dependencies
 
