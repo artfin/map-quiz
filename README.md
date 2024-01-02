@@ -10,10 +10,10 @@ $ ./build.sh && ./quiz
 
 ## Controls
 
-`Mouse left button` -- select state
-`Mouse right button` -- drag map
-`Mouse wheel` -- zoom
-`R` -- restart quiz 
+- `Mouse left button` -- select state
+- `Mouse right button` -- drag map
+- `Mouse wheel` -- zoom 
+- `r` -- restart quiz 
 
 ## Dependencies
 
