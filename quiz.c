@@ -10,10 +10,12 @@
 #include "raylib.h"
 #include "raymath.h"
 
-#define FONT_SIZE 64
+#define FONT_SIZE_LOAD 64
 
-#define HUD_LIFETIME 1.0
-#define IMAGE_SCALE 0.5
+#define HUD_LIFETIME 0.7 
+#define HUD_DEFAULT_FONTSIZE 40
+#define HUD_LARGE_FONTSIZE 75
+#define DEFAULT_IMAGE_SCALE 0.5
 
 #define BACKGROUND_COLOR 0x181818AA
 #define PROVINCE_CORRECT_COLOR 0xE9E9E9AA
@@ -102,13 +104,13 @@ int main()
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
-
-    int screen_width = 16*80; 
-    int screen_height = 9*80;
-    InitWindow(screen_width, screen_height, "Map quiz");
+    
+    size_t factor = 80;
+    InitWindow(16*factor, 9*factor, "Map quiz");
     SetTargetFPS(60);
+    SetExitKey(KEY_Q);
 
-    Font font = LoadFontEx("./resources/Alegreya-Regular.ttf", FONT_SIZE, NULL, 0);
+    Font font = LoadFontEx("./resources/Alegreya-Regular.ttf", FONT_SIZE_LOAD, NULL, 0);
     GenTextureMipmaps(&font.texture);
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
     
@@ -135,20 +137,16 @@ int main()
     size_t error_counter = 0;
 
     Camera2D cam = {0};
-    cam.zoom = 1.0; //IMAGE_SCALE;
+    cam.zoom = 1.0; 
+    
+    RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
 
     while (!WindowShouldClose()) {
 
-        if (IsKeyDown(KEY_Q)) {
-            UnloadTexture(texture); 
-            UnloadImage(color_image);
-            UnloadImage(black_white_image);
-            CloseWindow();
-            break;
-        }
-
         if (IsKeyDown(KEY_S)) {
+            printf("cam.offset.x: %.5lf; cam.offset.y: %.5lf\n", cam.offset.x, cam.offset.y);
             printf("cam.target.x: %.5lf; cam.target.y: %.5lf\n", cam.target.x, cam.target.y);
+            printf("cam.zoom: %.5lf\n", cam.zoom);
         }
 
         if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
@@ -157,48 +155,63 @@ int main()
             cam.target = Vector2Add(cam.target, delta);
         }
 
-        /*
         float wheel = GetMouseWheelMove();
+
         if (wheel != 0) {
             Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), cam);
             cam.offset = GetMousePosition();
-            cam.zoom += wheel * 0.125f;
+            cam.zoom += wheel * 0.2f;
             cam.target = mouseWorldPos;
-            if (cam.zoom < 0.125f) cam.zoom = 0.125f; 
+            if (cam.zoom < 0.125f) cam.zoom = 0.125f;
         }
-        */
 
-        screen_width = GetScreenWidth();
-        screen_height = GetScreenHeight();
+        int screen_width = GetScreenWidth();
+        int screen_height = GetScreenHeight();
 
-        BeginDrawing(); 
+        if (IsWindowResized()) {
+            UnloadRenderTexture(canvas);
+            canvas = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
+        }
+
+        BeginTextureMode(canvas); 
         BeginMode2D(cam);
 
         ClearBackground(GetColor(BACKGROUND_COLOR));
        
         // fixed texture position on the screen 
-        float posx = screen_width/2 - IMAGE_SCALE * texture.width/2;
-        float posy = screen_height/2 - IMAGE_SCALE * texture.height/2;
-        DrawTextureEx(texture, CLITERAL(Vector2){posx, posy}, 0.0, IMAGE_SCALE, WHITE);
+        float posx = screen_width/2 - DEFAULT_IMAGE_SCALE * texture.width/2;
+        float posy = screen_height/2 - DEFAULT_IMAGE_SCALE * texture.height/2;
+        DrawTextureEx(texture, CLITERAL(Vector2){posx, posy}, 0.0, DEFAULT_IMAGE_SCALE, WHITE);
+            
+        Vector2 ul_corner = CLITERAL(Vector2) {posx, posy}; // upper left corner
+        Vector2 lr_corner = CLITERAL(Vector2) {  // lower right corner
+            posx + DEFAULT_IMAGE_SCALE*texture.width,
+            posy + DEFAULT_IMAGE_SCALE*texture.height
+        }; 
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            Vector2 mouse = Vector2Add(GetMousePosition(), cam.target);
+            //Vector2 mouse = Vector2Add(GetMousePosition(), cam.target);
+            //printf("mouse.x: %.5lf; mouse.y: %.5lf\n", mouse.x, mouse.y);
+            
+            Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), cam);
+            //mouse = Vector2Subtract(mouse, cam.target);
 
-            if ((mouse.x < screen_width/2 - IMAGE_SCALE*texture.width/2)   || 
-                (mouse.x > screen_width/2 + IMAGE_SCALE*texture.width/2)   || 
-                (mouse.y < screen_height/2 - IMAGE_SCALE*texture.height/2) || 
-                (mouse.y > screen_height/2 + IMAGE_SCALE*texture.height/2)) 
-            {
+            printf("mouse.x: %.5lf; mouse.y: %.5lf\n", mouse.x, mouse.y);
+            //DrawCircle(mouse.x, mouse.y, 10.0, RED);
+            
+            printf("ul_corner: (%.5lf, %.5lf); lr_corner: (%.5lf, %.5lf)\n", ul_corner.x, ul_corner.y, lr_corner.x, lr_corner.y);
+
+            if ( (mouse.x < ul_corner.x) || (mouse.x > lr_corner.x) || (mouse.y < ul_corner.y) || (mouse.y > lr_corner.y)) {
                 printf("Click is outside the image!\n");
             } 
             else {
-                int x = (int) ( (mouse.x - (screen_width/2 - IMAGE_SCALE*texture.width/2)) /  IMAGE_SCALE);
-                int y = (int) ( (mouse.y - (screen_height/2 - IMAGE_SCALE*texture.height/2)) / IMAGE_SCALE);
-                Color c = GetImageColor(color_image, x, y);
+                int imgx = (int) ( (mouse.x - (screen_width/2 - DEFAULT_IMAGE_SCALE*texture.width/2)) / DEFAULT_IMAGE_SCALE);
+                int imgy = (int) ( (mouse.y - (screen_height/2 - DEFAULT_IMAGE_SCALE*texture.height/2)) / DEFAULT_IMAGE_SCALE);
+                Color c = GetImageColor(color_image, imgx, imgy);
                 unsigned long hex = rgb_to_hex(c.r, c.g, c.b);
                 
-                printf("mousex = %.5lf; mousey = %.5lf; x = %d; y = %d; color: (%d, %d, %d, %d) => #%06lx\n", 
-                        mouse.x, mouse.y, x, y, c.r, c.g, c.b, c.a, hex);
+                printf("Click is inside! imgx = %d; imgy = %d; color: (%d, %d, %d, %d) => #%06lx\n", 
+                        imgx, imgy, c.r, c.g, c.b, c.a, hex);
 
                 char* clicked_province = hmget(PROVINCES, hex);
                 if (clicked_province != NULL) {
@@ -232,7 +245,7 @@ int main()
                         draw_wrong_msg = true;
                     }
                 } else {
-                    printf("Province name unknown! Possibly a border has been clicked. \n");
+                    printf("Province name unknown! Possibly a border has been clicked. \n\n");
                 }
             }
         }
@@ -243,13 +256,23 @@ int main()
             int n = snprintf(buffer, BUFFER_SIZE, "Find '%s'", hidden_province->value);
             assert(n == 7 + strlen(hidden_province->value));
 
-            DrawTextEx(font, buffer, CLITERAL(Vector2){0.2*screen_width, 0.1*screen_height}, 40, 0, WHITE);
+            Vector2 pos = CLITERAL(Vector2) {
+                ul_corner.x + 0.03 * DEFAULT_IMAGE_SCALE*texture.width,
+                ul_corner.y + 0.01 * DEFAULT_IMAGE_SCALE*texture.height
+            };
+
+            DrawTextEx(font, buffer, pos, HUD_DEFAULT_FONTSIZE, 0, WHITE);
             
             memset(buffer, 0, BUFFER_SIZE);
             n = snprintf(buffer, BUFFER_SIZE, "Error counter: %ld", error_counter);
             // TODO: error check `snprintf`
 
-            DrawTextEx(font, buffer, CLITERAL(Vector2){0.65*screen_width, 0.1*screen_height}, 40, 0, WHITE);
+            pos = CLITERAL(Vector2) {
+                ul_corner.x + 0.75 * DEFAULT_IMAGE_SCALE*texture.width, 
+                ul_corner.y + 0.01 * DEFAULT_IMAGE_SCALE*texture.height
+            };
+
+            DrawTextEx(font, buffer, pos, HUD_DEFAULT_FONTSIZE, 0, WHITE);
         } 
 
         if (draw_wrong_msg) {
@@ -257,7 +280,11 @@ int main()
             lifetime_wrong_msg -= dt;       
 
             if (lifetime_wrong_msg > 0) {   
-                DrawTextEx(font, "Wrong!", CLITERAL(Vector2){screen_width/2, screen_height/2}, 75, 0, RED);
+                Vector2 pos = CLITERAL(Vector2) {
+                    ul_corner.x + 0.4 * DEFAULT_IMAGE_SCALE*texture.width,
+                    ul_corner.y + 0.5 * DEFAULT_IMAGE_SCALE*texture.height 
+                };
+                DrawTextEx(font, "Wrong!", pos, HUD_LARGE_FONTSIZE, 0, RED);
             } else {
                 draw_wrong_msg = false;
                 lifetime_wrong_msg = HUD_LIFETIME;
@@ -265,12 +292,32 @@ int main()
         }
 
         if (draw_victory_msg) {
-            DrawTextEx(font, "Victory!", CLITERAL(Vector2){screen_width/2, screen_height/2}, 75, 0, GREEN);
+            Vector2 pos = CLITERAL(Vector2) {
+                ul_corner.x + 0.4 * DEFAULT_IMAGE_SCALE*texture.width,
+                ul_corner.y + 0.5 * DEFAULT_IMAGE_SCALE*texture.height 
+            };
+            DrawTextEx(font, "Victory!", pos, HUD_LARGE_FONTSIZE, 0, GREEN);
         }
 
         EndMode2D();
+        EndTextureMode();
+
+        BeginDrawing();
+        // flip texture 
+        DrawTexturePro(canvas.texture,
+            CLITERAL(Rectangle){0, 0, canvas.texture.width, -canvas.texture.height },
+            CLITERAL(Rectangle){0, 0, screen_width, screen_height}, 
+            CLITERAL(Vector2) {0, 0},
+            0, WHITE);
+                
         EndDrawing();
     } 
+    
+    UnloadTexture(texture); 
+    UnloadImage(color_image);
+    UnloadImage(black_white_image);
+    UnloadRenderTexture(canvas);
+    CloseWindow();
 
     return 0;
 }
