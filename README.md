@@ -1,6 +1,6 @@
 # Map Quiz
 
-A simple quiz to learn states of Mexico.
+A simple quiz to learn states.
 
 ## Quick Start
 
