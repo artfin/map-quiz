@@ -77,6 +77,9 @@ const char* BW_MAP_MEXICO_FILENAME    = "resources/mexico-black-white.png";
 const char* COLOR_MAP_BRAZIL_FILENAME = "resources/brazil-colored.png";
 const char* BW_MAP_BRAZIL_FILENAME    = "resources/brazil-black-white.png";
 
+const char* COLOR_MAP_JAPAN_FILENAME = "resources/japan-colored.png";
+const char* BW_MAP_JAPAN_FILENAME    = "resources/japan-black-white.png";
+
 void fill_mexico_states() {
     hmfree(PROVINCES);
     hmput(PROVINCES, 0x00ffff, "Baja California");
@@ -154,6 +157,62 @@ void fill_brazil_states() {
     }
 }
 
+void fill_japan_states() {
+    hmfree(PROVINCES);
+    hmput(PROVINCES, 0xed1c24, "Hokkaido"); 
+    hmput(PROVINCES, 0xff7f27, "Aomori"); 
+    hmput(PROVINCES, 0x22b14c, "Iwate"); 
+    hmput(PROVINCES, 0xfff200, "Akita"); 
+    hmput(PROVINCES, 0xa349a4, "Miyagi"); 
+    hmput(PROVINCES, 0x3f48cc, "Yamagata"); 
+    hmput(PROVINCES, 0x00ff00, "Fukushima"); 
+    hmput(PROVINCES, 0xffc90e, "Ibaraki"); 
+    hmput(PROVINCES, 0xb5e61d, "Tochigi"); 
+    hmput(PROVINCES, 0x99d9ea, "Gunma"); 
+    hmput(PROVINCES, 0x8000ff, "Saitama"); 
+    hmput(PROVINCES, 0xff00ff, "Chiba");
+    hmput(PROVINCES, 0xff0080, "Tokyo"); 
+    hmput(PROVINCES, 0x808000, "Kanagawa");
+    hmput(PROVINCES, 0xffaec9, "Niigata"); 
+    hmput(PROVINCES, 0xc8bfe7, "Toyama");
+    hmput(PROVINCES, 0x312893, "Ishikawa"); 
+    hmput(PROVINCES, 0x4ffdfd, "Fukui");
+    hmput(PROVINCES, 0x4bc6d3, "Yamanashi"); 
+    hmput(PROVINCES, 0x7092be, "Nagano");
+    hmput(PROVINCES, 0xfb717b, "Gifu"); 
+    hmput(PROVINCES, 0x4f803c, "Shizuoka");
+    hmput(PROVINCES, 0x9a7dee, "Aichi"); 
+    hmput(PROVINCES, 0x9ad1a2, "Mie"); 
+    hmput(PROVINCES, 0xf0e65b, "Shiga"); 
+    hmput(PROVINCES, 0x05e437, "Kyoto");
+    hmput(PROVINCES, 0xa06849, "Osaka"); 
+    hmput(PROVINCES, 0x8dd812, "Hyogo");
+    hmput(PROVINCES, 0xc487c5, "Nara"); 
+    hmput(PROVINCES, 0xd713d1, "Wakayama"); 
+    hmput(PROVINCES, 0xb5d2b3, "Tottori"); 
+    hmput(PROVINCES, 0xfafa8b, "Shimane");
+    hmput(PROVINCES, 0xf7948e, "Okayama"); 
+    hmput(PROVINCES, 0xdbaab8, "Hiroshima");
+    hmput(PROVINCES, 0xd89ee7, "Yamaguchi"); 
+    hmput(PROVINCES, 0xdec6a7, "Tokushima"); 
+    hmput(PROVINCES, 0x88cefd, "Kagawa"); 
+    hmput(PROVINCES, 0x97ee9d, "Ehime");
+    hmput(PROVINCES, 0xadaed8, "Kochi"); 
+    hmput(PROVINCES, 0xc4bacb, "Fukuoka");
+    hmput(PROVINCES, 0x98edc9, "Saga"); 
+    hmput(PROVINCES, 0x91fefc, "Nagasaki"); 
+    hmput(PROVINCES, 0xbf9ee7, "Kumamoto"); 
+    hmput(PROVINCES, 0xf88dad, "Oita");
+    hmput(PROVINCES, 0xabdad1, "Miyazaki"); 
+    hmput(PROVINCES, 0xfab88b, "Kagoshima");
+    hmput(PROVINCES, 0x0000ff, "Okinawa");
+    assert(hmlen(PROVINCES) == 47);
+    
+    for (int i = 0; i < hmlen(PROVINCES); ++i) {
+        PROVINCES[i].guessed = false;
+    }
+}
+
 typedef enum {
     QUIZ = 0,
     VICTORY,
@@ -161,8 +220,9 @@ typedef enum {
 } GameState; 
 
 typedef enum {
-    MAP_MEXICO,
-    MAP_BRAZIL
+    MAP_MEXICO = 0,
+    MAP_BRAZIL,
+    MAP_JAPAN,
 } ActiveMap;
 
 Font font = {0};
@@ -424,6 +484,32 @@ void learn(GameState *state, Rec *rec, Texture *texture, Camera2D *camera)
     }
 }
 
+Rectangle hud_country(Rectangle r_abs, const char* country_name, Camera2D *camera)
+{
+    Vector3 ul = CLITERAL(Vector3) { r_abs.x, r_abs.y, 0.0 };
+    Vector3 lr = CLITERAL(Vector3) { r_abs.x + r_abs.width, r_abs.y + r_abs.height, 0.0 };
+    Matrix invMatCamera = MatrixInvert(GetCameraMatrix2D(*camera));
+    Vector3 ul_t = Vector3Transform(ul, invMatCamera);
+    Vector3 lr_t = Vector3Transform(lr, invMatCamera);
+
+    Rectangle menu_entry = CLITERAL(Rectangle){ul_t.x, ul_t.y, lr_t.x - ul_t.x, lr_t.y - ul_t.y }; 
+    DrawRectangleRounded(menu_entry, 0.5, 10, RED);
+
+    float fontsize = 50 / camera->zoom;
+    Vector2 name_len = MeasureTextEx(font, country_name, fontsize, 0);
+    
+    Vector2 name_pos = CLITERAL(Vector2) {
+        menu_entry.x + 0.5 * menu_entry.width - 0.5 * name_len.x, 
+        menu_entry.y + 0.5 * menu_entry.height - 0.5 * name_len.y
+    };
+
+    BeginShaderMode(shader);
+    DrawTextEx(font, country_name, name_pos, fontsize, 0, WHITE);
+    EndShaderMode();
+    
+    return menu_entry;
+}
+
 int main()
 {
     srand(time(NULL));
@@ -546,17 +632,9 @@ int main()
         DrawTextureEx(map_texture, CLITERAL(Vector2){posx, posy}, 0.0, DEFAULT_IMAGE_SCALE, WHITE);
 
         // TODO: add more structure to this?
-        Rectangle menu_entry_mexico = CLITERAL(Rectangle) { 20.0, 20.0, 150.0, 100.0 }; 
-        DrawRectangleRounded(menu_entry_mexico, 0.5, 10, RED);
-        BeginShaderMode(shader);
-        DrawTextEx(font, "Mexico", CLITERAL(Vector2) {50.0, 45.0}, 50, 0, WHITE);
-        EndShaderMode();
-
-        Rectangle menu_entry_brazil = CLITERAL(Rectangle) { 20.0, 170.0, 150.0, 100.0 }; 
-        DrawRectangleRounded(menu_entry_brazil, 0.5, 10, RED);
-        BeginShaderMode(shader);
-        DrawTextEx(font, "Brazil", CLITERAL(Vector2) {50.0, 200.0}, 50, 0, WHITE);
-        EndShaderMode();
+        Rectangle menu_entry_mexico = hud_country(CLITERAL(Rectangle){20.0, 20.0, 150.0, 100.0}, "Mexico", &camera);
+        Rectangle menu_entry_brazil = hud_country(CLITERAL(Rectangle){20.0, 130.0, 150.0, 100.0}, "Brazil", &camera);
+        Rectangle menu_entry_japan = hud_country(CLITERAL(Rectangle){20.0, 240.0, 150.0, 100.0}, "Japan", &camera);
         
         Rec rec = (Rec) {
             .ul = CLITERAL(Vector2) {posx, posy},
@@ -571,7 +649,7 @@ int main()
         if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
             Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
 
-            if (CheckCollisionPointRec(mouseWorldPos, menu_entry_mexico) && (active_map == MAP_BRAZIL)) {
+            if (CheckCollisionPointRec(mouseWorldPos, menu_entry_mexico) && (active_map != MAP_MEXICO)) {
                 active_map = MAP_MEXICO;
                 UnloadTexture(map_texture);
 
@@ -588,7 +666,7 @@ int main()
                 state = QUIZ;
             }
 
-            if (CheckCollisionPointRec(mouseWorldPos, menu_entry_brazil) && (active_map == MAP_MEXICO)) {
+            if (CheckCollisionPointRec(mouseWorldPos, menu_entry_brazil) && (active_map != MAP_BRAZIL)) {
                 active_map = MAP_BRAZIL;
                 UnloadTexture(map_texture);
 
@@ -599,6 +677,23 @@ int main()
                 map_texture = LoadTextureFromImage(black_white_image);
                 
                 fill_brazil_states();
+                hidden_province = select_random_province();
+                error_counter = 0; 
+                
+                state = QUIZ;
+            }
+            
+            if (CheckCollisionPointRec(mouseWorldPos, menu_entry_japan) && (active_map != MAP_JAPAN)) {
+                active_map = MAP_JAPAN;
+                UnloadTexture(map_texture);
+
+                color_image = LoadImage(COLOR_MAP_JAPAN_FILENAME);
+                black_white_image = LoadImage(BW_MAP_JAPAN_FILENAME);
+                assert((color_image.width == black_white_image.width) && (color_image.height == black_white_image.height));
+    
+                map_texture = LoadTextureFromImage(black_white_image);
+                
+                fill_japan_states();
                 hidden_province = select_random_province();
                 error_counter = 0; 
                 

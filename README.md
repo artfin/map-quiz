@@ -23,3 +23,8 @@ The application needs `resources` to be present in the folder.
 
 - [Raylib 5.0](https://github.com/raysan5/raylib)
 
+## Data Source
+
+- [Brazil map](https://vemaps.com/brazil/br-07#google_vignette)
+- [Mexico map](https://www.geoguessr.com/pdf/4078)
+- [Japan map](https://vemaps.com/japan/jp-02) 
