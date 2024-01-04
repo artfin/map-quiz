@@ -22,20 +22,26 @@
 
 #define FONT_SIZE_LOAD 160 
 
+#define MIN_CAMERA_ZOOM 0.9f
+#define MAX_CAMERA_ZOOM 2.5f
+
 #define HUD_LIFETIME 0.7 
-#define HUD_DEFAULT_FONTSIZE 40
-#define HUD_LARGE_FONTSIZE 75
+#define HUD_DEFAULT_FONTSIZE 50
+#define HUD_LARGE_FONTSIZE 90 
 #define DEFAULT_IMAGE_SCALE 0.5
 
+#define COLOR_TEXT_DEFAULT GetColor(0xDF2935FF)
+
 #define PANEL_WIDTH 0.15
-#define COLOR_PANEL_BUTTON           GetColor(0xAD343EAA) 
-#define COLOR_PANEL_BUTTON_SELECTED  GetColor(0xF2AF29AA)
+#define COLOR_PANEL_BUTTON           GetColor(0xAD343EFF) 
+#define COLOR_PANEL_BUTTON_SELECTED  GetColor(0xF2AF29FF)
 #define COLOR_PANEL_BUTTON_HOVEROVER ColorBrightness(COLOR_PANEL_BUTTON, 0.2)
 
-#define COLOR_BACKGROUND GetColor(0x181818AA)
-#define COLOR_COUNTRIES_PANEL_BACKGROUND GetColor(0xDDDBCBAA) 
-#define COLOR_CORRECT_PROVINCE GetColor(0xE9E9E9AA)
-#define COLOR_LEARN_PROVINCE GetColor(0xE9E9E9AA)
+#define COLOR_BACKGROUND GetColor(0x181818FF)
+#define COLOR_COUNTRIES_PANEL_BACKGROUND GetColor(0xDDDBCBFF) 
+#define COLOR_CORRECT_PROVINCE GetColor(0xE9E9E9FF)
+#define COLOR_LEARN_PROVINCE GetColor(0xE9E9E9FF)
+#define COLOR_VICTORY ColorBrightness(GetColor(0x7DD181FF), -0.3)
 
 // -------------------------------------------------------------------------------------------
 // Copyright 2023 Alexey Kutepov <reximkut@gmail.com>
@@ -88,12 +94,11 @@ typedef struct {
     
 Province *PROVINCES = NULL;
 
-Province* select_random_province()
+bool any_provinces_left_to_guess()
 {
-    bool found = false;
+    bool any_not_guessed = false;
     Province *p;
 
-    bool any_not_guessed = false;
     for (int i = 0; i < hmlen(PROVINCES); ++i) {
         p = &PROVINCES[i];
         if (!p->guessed) {
@@ -101,10 +106,13 @@ Province* select_random_province()
         }
     }
 
-    if (!any_not_guessed) { 
-        printf("There are no provinces to guess!\n");
-        return NULL;
-    }
+    return !any_not_guessed;
+}
+
+Province* select_random_province()
+{
+    bool found = false;
+    Province *p;
 
     while (!found) {
         int i = rand() % hmlen(PROVINCES);
@@ -152,7 +160,7 @@ typedef struct {
 
 Countries COUNTRIES = {0};
 
-void fill_states(int country_counter) {
+void fill_provinces(int country_counter) {
     hmfree(PROVINCES);
 
     switch (country_counter) {
@@ -298,12 +306,29 @@ void reset_provinces() {
     }
 }
 
+Rectangle project_rectangle(Rectangle r_abs)
+{
+    Vector3 ul = CLITERAL(Vector3) { r_abs.x, r_abs.y, 0.0 };
+    Vector3 lr = CLITERAL(Vector3) { r_abs.x + r_abs.width, r_abs.y + r_abs.height, 0.0 };
+    Matrix invMatCamera = MatrixInvert(GetCameraMatrix2D(camera));
+    Vector3 ul_t = Vector3Transform(ul, invMatCamera);
+    Vector3 lr_t = Vector3Transform(lr, invMatCamera);
+
+    return CLITERAL(Rectangle){ul_t.x, ul_t.y, lr_t.x - ul_t.x, lr_t.y - ul_t.y }; 
+}
+
 void quiz(Rec *rec, Province **hidden_province)
 {
     static bool draw_wrong_msg = false;
     Province *p;
 
+    if (any_provinces_left_to_guess()) {
+        state = VICTORY;
+    }
+
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (GetMouseX() < GetScreenWidth() * PANEL_WIDTH) goto skip_if;
+
         Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
 
         printf("mouse.x: %.5lf; mouse.y: %.5lf\n", mouse.x, mouse.y);
@@ -313,8 +338,7 @@ void quiz(Rec *rec, Province **hidden_province)
 
         if ( (mouse.x < rec->ul.x) || (mouse.x > rec->lr.x) || (mouse.y < rec->ul.y) || (mouse.y > rec->lr.y)) {
             printf("Click is outside the image!\n");
-        } 
-        else {
+        } else {
             int imgx = (int) ( (mouse.x - (GetScreenWidth()/2 - DEFAULT_IMAGE_SCALE*map_texture.width/2)) / DEFAULT_IMAGE_SCALE);
             int imgy = (int) ( (mouse.y - (GetScreenHeight()/2 - DEFAULT_IMAGE_SCALE*map_texture.height/2)) / DEFAULT_IMAGE_SCALE);
 
@@ -350,11 +374,13 @@ void quiz(Rec *rec, Province **hidden_province)
                     map_texture = LoadTextureFromImage(bw_map);
 
                     (*hidden_province)->guessed = true;
+                    if (any_provinces_left_to_guess()) {
+                        state = VICTORY;
+                        return;
+                    }
+
                     *hidden_province = select_random_province();
 
-                    if (*hidden_province == NULL) {
-                        state = VICTORY;
-                    }
                 } else {
                     error_counter += 1;
                     draw_wrong_msg = true;
@@ -365,24 +391,28 @@ void quiz(Rec *rec, Province **hidden_province)
         }
     }
 
-    if (*hidden_province != NULL) {
-        Vector2 pos_find_str = CLITERAL(Vector2) {
-            rec->ul.x + 0.03 * DEFAULT_IMAGE_SCALE*map_texture.width,
-            rec->ul.y + 0.01 * DEFAULT_IMAGE_SCALE*map_texture.height
-        };
+skip_if:
+    Rectangle status_bar = project_rectangle(CLITERAL(Rectangle) {
+        .x = GetScreenWidth() * PANEL_WIDTH,
+        .y = 0.0,
+        .width = GetScreenWidth() * (1.0 - PANEL_WIDTH),
+        .height = 65.0});
 
-        Vector2 pos_errors_str = CLITERAL(Vector2) {
-            rec->ul.x + 0.75 * DEFAULT_IMAGE_SCALE*map_texture.width, 
-            rec->ul.y + 0.01 * DEFAULT_IMAGE_SCALE*map_texture.height
-        };
+    DrawRectangleRec(status_bar, ColorBrightness(COLOR_BACKGROUND, 0.2));
 
-        BeginShaderMode(shader);
-        DrawTextEx(font, TextFormat("Find '%s'", (*hidden_province)->value), 
-                   pos_find_str, HUD_DEFAULT_FONTSIZE, 0, WHITE);
-        DrawTextEx(font, TextFormat("Error counter: %ld", error_counter), 
-                   pos_errors_str, HUD_DEFAULT_FONTSIZE, 0, WHITE);
-        EndShaderMode();
-    } 
+    float padding = 0.01 * GetScreenHeight();
+    Vector2 pos_find_str = GetScreenToWorld2D(CLITERAL(Vector2) {PANEL_WIDTH*GetScreenWidth() + 3*padding, padding}, camera);
+
+    Vector2 pos_errors_str = GetScreenToWorld2D(CLITERAL(Vector2) {
+            GetScreenWidth() - 270.0, padding 
+            }, camera);
+
+    BeginShaderMode(shader);
+    DrawTextEx(font, TextFormat("Find '%s'", (*hidden_province)->value), 
+            pos_find_str, HUD_DEFAULT_FONTSIZE / camera.zoom, 0, COLOR_TEXT_DEFAULT);
+    DrawTextEx(font, TextFormat("Error counter: %ld", error_counter), 
+            pos_errors_str, HUD_DEFAULT_FONTSIZE / camera.zoom, 0, COLOR_TEXT_DEFAULT);
+    EndShaderMode();
    
     static float lifetime_wrong_msg = HUD_LIFETIME; 
     if (draw_wrong_msg) {
@@ -407,13 +437,26 @@ void quiz(Rec *rec, Province **hidden_province)
 
 void victory(Rec *rec) 
 {
-    Vector2 pos = CLITERAL(Vector2) {
-        rec->ul.x + 0.4 * DEFAULT_IMAGE_SCALE*rec->width,
-        rec->ul.y + 0.5 * DEFAULT_IMAGE_SCALE*rec->height 
-    };
+    Rectangle status_bar = project_rectangle(CLITERAL(Rectangle) {
+        .x = GetScreenWidth() * PANEL_WIDTH,
+        .y = 0.0,
+        .width = GetScreenWidth() * (1.0 - PANEL_WIDTH),
+        .height = 65.0});
+
+    DrawRectangleRec(status_bar, ColorBrightness(COLOR_BACKGROUND, 0.2));
+
+    float padding = 0.01 * GetScreenHeight();
 
     BeginShaderMode(shader);
-    DrawTextEx(font, "Victory!", pos, HUD_LARGE_FONTSIZE, 0, GREEN);
+    DrawTextEx(font, TextFormat("Error counter: %ld", error_counter), GetScreenToWorld2D(CLITERAL(Vector2) {
+        GetScreenWidth() - 270.0, padding}, camera),
+        HUD_DEFAULT_FONTSIZE / camera.zoom, 0, COLOR_TEXT_DEFAULT);
+    EndShaderMode();
+
+    Vector2 victory_text_pos = GetScreenToWorld2D(CLITERAL(Vector2) {GetScreenWidth()/2, GetScreenHeight()/2}, camera);
+
+    BeginShaderMode(shader);
+    DrawTextEx(font, "Victory!", victory_text_pos, HUD_LARGE_FONTSIZE / camera.zoom, 0, COLOR_VICTORY);
     EndShaderMode();
 }
 
@@ -545,17 +588,6 @@ void learn(Rec *rec)
     }
 }
 
-Rectangle project_rectangle(Rectangle r_abs)
-{
-    Vector3 ul = CLITERAL(Vector3) { r_abs.x, r_abs.y, 0.0 };
-    Vector3 lr = CLITERAL(Vector3) { r_abs.x + r_abs.width, r_abs.y + r_abs.height, 0.0 };
-    Matrix invMatCamera = MatrixInvert(GetCameraMatrix2D(camera));
-    Vector3 ul_t = Vector3Transform(ul, invMatCamera);
-    Vector3 lr_t = Vector3Transform(lr, invMatCamera);
-
-    return CLITERAL(Rectangle){ul_t.x, ul_t.y, lr_t.x - ul_t.x, lr_t.y - ul_t.y }; 
-}
-
 typedef enum {
     BS_NONE      = 0, // 00
     BS_HOVEROVER = 1, // 01
@@ -596,24 +628,30 @@ void panel_countries(Rectangle panel_boundary, Province **hidden_province)
         
         Color color;
         if ((int) i != active_map) {
-            int state = button(menu_entry);
-            if (state & BS_HOVEROVER) {
+            int button_state = button(menu_entry);
+            if (button_state & BS_HOVEROVER) {
                 color = COLOR_PANEL_BUTTON_HOVEROVER;
             } else {
                 color = COLOR_PANEL_BUTTON;
             }
 
-            if (state & BS_CLICKED) {
+            if (button_state & BS_CLICKED) {
+                Country *country = &COUNTRIES.items[active_map];
+                country->bw_map = LoadImage(country->bw_map_filename);
+                map_texture = LoadTextureFromImage(country->bw_map);
+
                 active_map = i;
                 camera.zoom = 1.0;
 
                 map_texture = LoadTextureFromImage(COUNTRIES.items[i].bw_map);
             
-                fill_states(i);
+                fill_provinces(i);
+
                 *hidden_province = select_random_province();
+
                 error_counter = 0; 
 
-                state = QUIZ;
+                state = QUIZ; 
             }
         } else {
             color = COLOR_PANEL_BUTTON_SELECTED;
@@ -694,15 +732,18 @@ int main()
     RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
     SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
 
-    fill_states(active_map);
+    fill_provinces(active_map);
     map_texture = LoadTextureFromImage(COUNTRIES.items[active_map].bw_map);
+    SetTextureFilter(map_texture, TEXTURE_FILTER_BILINEAR);
 
     Province* hidden_province = select_random_province();
     
 
     while (!WindowShouldClose()) {
         if (IsKeyDown(KEY_R)) {
-            map_texture = LoadTextureFromImage(COUNTRIES.items[active_map].bw_map);
+            Country *country = &COUNTRIES.items[active_map];
+            country->bw_map = LoadImage(country->bw_map_filename);
+            map_texture = LoadTextureFromImage(country->bw_map);
     
             reset_provinces();
 
@@ -713,7 +754,9 @@ int main()
         }
            
         if (IsKeyDown(KEY_L)) {
-            map_texture = LoadTextureFromImage(COUNTRIES.items[active_map].bw_map);
+            Country *country = &COUNTRIES.items[active_map];
+            country->bw_map = LoadImage(country->bw_map_filename);
+            map_texture = LoadTextureFromImage(country->bw_map);
 
             reset_provinces();
             error_counter = 0;
@@ -731,7 +774,12 @@ int main()
         if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
             Vector2 delta = GetMouseDelta();
             delta = Vector2Scale(delta, -1.0f / camera.zoom);
+            
+            //Vector2 new_camera_target = Vector2Add(camera.target, delta);
+            //printf("new_camera_target: %.5lf, %.5lf\n", new_camera_target.x, new_camera_target.y);
+            
             camera.target = Vector2Add(camera.target, delta);
+            //if (new_camera_target.x > 800.0) camera.target.x = 800.0; 
         }
 
         float wheel = GetMouseWheelMove();
@@ -741,7 +789,8 @@ int main()
             camera.offset = GetMousePosition();
             camera.zoom += wheel * 0.2f;
             camera.target = mouseWorldPos;
-            if (camera.zoom < 0.125f) camera.zoom = 0.125f;
+            if (camera.zoom < MIN_CAMERA_ZOOM) camera.zoom = MIN_CAMERA_ZOOM; 
+            if (camera.zoom > MAX_CAMERA_ZOOM) camera.zoom = MAX_CAMERA_ZOOM; 
         }
 
         if (IsWindowResized()) {
@@ -754,10 +803,22 @@ int main()
 
         ClearBackground(COLOR_BACKGROUND);
 
-        // fixed texture position on the screen 
         float posx = GetScreenWidth()/2 - DEFAULT_IMAGE_SCALE * map_texture.width/2;
         float posy = GetScreenHeight()/2 - DEFAULT_IMAGE_SCALE * map_texture.height/2;
         DrawTextureEx(map_texture, CLITERAL(Vector2){posx, posy}, 0.0, DEFAULT_IMAGE_SCALE, WHITE);
+            
+        /*
+        Rectangle map_rectangle = CLITERAL(Rectangle) {
+            .x = PANEL_WIDTH, 
+            .y = 0.0, 
+            .width = GetScreenWidth() - PANEL_WIDTH,
+            .height = GetScreenHeight()
+        };
+ 
+        DrawTexturePro(map_texture, CLITERAL(Rectangle) { 0.0f, 0.0f, map_texture.width, map_texture.height }, 
+            CLITERAL(Rectangle) { GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f, map_texture.width, map_texture.height }, 
+            CLITERAL(Vector2) {map_texture.width / 2, map_texture.height / 2}, 0.0f, WHITE);
+        */
 
         panel_countries(CLITERAL(Rectangle) {
             .x = 0, 
@@ -765,6 +826,7 @@ int main()
             .width = PANEL_WIDTH * GetScreenWidth(),
             .height = GetScreenHeight()
         }, &hidden_province); 
+        //printf("main loop state = %d\n", state);
         
         Rec rec = (Rec) {
             .ul = CLITERAL(Vector2) {posx, posy},
@@ -776,8 +838,7 @@ int main()
             .height = map_texture.height
         }; 
 
-        switch (state) 
-        {
+        switch (state) {
             case QUIZ: {
                 quiz(&rec, &hidden_province);
                 break;
@@ -791,6 +852,10 @@ int main()
             case VICTORY: {
                 victory(&rec);
                 break;
+            }
+
+            default: {
+                assert(false);
             }
         }
 
