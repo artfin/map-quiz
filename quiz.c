@@ -4,12 +4,16 @@
 #include <stdio.h>
 #include <time.h>
 #include <limits.h>
+#include <stdint.h>
 
 // implementation added to raylib.h
 #include "stb_image.h"
 
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
+       
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 #include "raylib.h"
 #include "raymath.h"
@@ -19,6 +23,9 @@
 #else 
    #define GLSL_VERSION 100
 #endif
+                    
+#define DEBUG_SAVE_MAP_TO_PNG    
+#undef DEBUG_SAVE_MAP_TO_PNG    
 
 #define FONT_SIZE_LOAD 160 
 
@@ -37,11 +44,15 @@
 #define COLOR_PANEL_BUTTON_SELECTED  GetColor(0xF2AF29FF)
 #define COLOR_PANEL_BUTTON_HOVEROVER ColorBrightness(COLOR_PANEL_BUTTON, 0.2)
 
-#define COLOR_BACKGROUND GetColor(0x181818FF)
+#define COLOR_BACKGROUND                 GetColor(0x181818FF)
 #define COLOR_COUNTRIES_PANEL_BACKGROUND GetColor(0xDDDBCBFF) 
-#define COLOR_CORRECT_PROVINCE GetColor(0xE9E9E9FF)
-#define COLOR_LEARN_PROVINCE GetColor(0xE9E9E9FF)
-#define COLOR_VICTORY ColorBrightness(GetColor(0x7DD181FF), -0.3)
+#define COLOR_LEARN_PROVINCE             GetColor(0xE9E9E9FF)
+#define COLOR_VICTORY                    ColorBrightness(GetColor(0x7DD181FF), -0.3)
+
+#define MAX_ERRORS_CURRENT_ROUND 3
+#define COLOR_GUESSED_PERFECT_PROVINCE GetColor(0xE9E9E9FF)
+#define COLOR_GUESSED_WERRORS_PROVINCE GetColor(0xFFF370FF)
+#define COLOR_INCORRECT_PROVINCE       GetColor(0xB52A2AFF) 
 
 // -------------------------------------------------------------------------------------------
 // Copyright 2023 Alexey Kutepov <reximkut@gmail.com>
@@ -81,10 +92,6 @@
     } while (0)
 // -------------------------------------------------------------------------------------------
 
-unsigned long rgb_to_hex(int r, int g, int b) {   
-    return ((r & 0xff) << 16) + ((g & 0xff) << 8) + (b & 0xff);
-}
-
 typedef struct {
     unsigned long key;
     char* value;
@@ -101,12 +108,10 @@ bool any_provinces_left_to_guess()
 
     for (int i = 0; i < hmlen(PROVINCES); ++i) {
         p = &PROVINCES[i];
-        if (!p->guessed) {
-            any_not_guessed = true;
-        }
+        if (!p->guessed) any_not_guessed = true;
     }
 
-    return !any_not_guessed;
+    return any_not_guessed;
 }
 
 Province* select_random_province()
@@ -165,122 +170,122 @@ void fill_provinces(int country_counter) {
 
     switch (country_counter) {
         case MAP_MEXICO: {
-            hmput(PROVINCES, 0x00ffff, "Baja California");
-            hmput(PROVINCES, 0x808080, "Baja California Sur"); 
-            hmput(PROVINCES, 0x800000, "Sonora");
-            hmput(PROVINCES, 0x808000, "Chihuahua");
-            hmput(PROVINCES, 0x008000, "Coahuila");
-            hmput(PROVINCES, 0x000080, "Nuevo Leon");
-            hmput(PROVINCES, 0xff00ff, "Tamaulipas");
-            hmput(PROVINCES, 0xff0000, "Sinaloa");
-            hmput(PROVINCES, 0xffff00, "Durango");
-            hmput(PROVINCES, 0x00ff00, "Zacatecas");
-            hmput(PROVINCES, 0x0000ff, "San Luis Potosi");
-            hmput(PROVINCES, 0x6bd4bf, "Veracruz");
-            hmput(PROVINCES, 0x008080, "Nayarit");
-            hmput(PROVINCES, 0xe94f37, "Jalisco");
-            hmput(PROVINCES, 0x004040, "Colima");
-            hmput(PROVINCES, 0x808040, "Michoacan");
-            hmput(PROVINCES, 0x80ffff, "Guerrero");
-            hmput(PROVINCES, 0xb04f89, "Oaxaca"); 
-            hmput(PROVINCES, 0x2d534e, "Chiapas"); 
-            hmput(PROVINCES, 0x9a83bc, "Tabasco"); 
-            hmput(PROVINCES, 0x804000, "Puebla"); 
-            hmput(PROVINCES, 0xb18e93, "Campeche"); 
-            hmput(PROVINCES, 0xd2bead, "Yucatan"); 
-            hmput(PROVINCES, 0xf4948b, "Quintana Roo"); 
-            hmput(PROVINCES, 0xff0080, "Mexico City"); 
-            hmput(PROVINCES, 0xffff80, "Aguascalientes"); 
-            hmput(PROVINCES, 0x800080, "Guanajuato"); 
-            hmput(PROVINCES, 0x0080ff, "Queretaro"); 
-            hmput(PROVINCES, 0x004080, "Hidalgo"); 
-            hmput(PROVINCES, 0x00ff80, "State of Mexico"); 
-            hmput(PROVINCES, 0x4000ff, "Morelos"); 
-            hmput(PROVINCES, 0xff8040, "Tlaxcala"); 
+            hmput(PROVINCES, 0x00ffffff, "Baja California");
+            hmput(PROVINCES, 0x808080ff, "Baja California Sur"); 
+            hmput(PROVINCES, 0x800000ff, "Sonora");
+            hmput(PROVINCES, 0x808000ff, "Chihuahua");
+            hmput(PROVINCES, 0x008000ff, "Coahuila");
+            hmput(PROVINCES, 0x000080ff, "Nuevo Leon");
+            hmput(PROVINCES, 0xff00ffff, "Tamaulipas");
+            hmput(PROVINCES, 0xff0000ff, "Sinaloa");
+            hmput(PROVINCES, 0xffff00ff, "Durango");
+            hmput(PROVINCES, 0x00ff00ff, "Zacatecas");
+            hmput(PROVINCES, 0x0000ffff, "San Luis Potosi");
+            hmput(PROVINCES, 0x6bd4bfff, "Veracruz");
+            hmput(PROVINCES, 0x008080ff, "Nayarit");
+            hmput(PROVINCES, 0xe94f37ff, "Jalisco");
+            hmput(PROVINCES, 0x004040ff, "Colima");
+            hmput(PROVINCES, 0x808040ff, "Michoacan");
+            hmput(PROVINCES, 0x80ffffff, "Guerrero");
+            hmput(PROVINCES, 0xb04f89ff, "Oaxaca"); 
+            hmput(PROVINCES, 0x2d534eff, "Chiapas"); 
+            hmput(PROVINCES, 0x9a83bcff, "Tabasco"); 
+            hmput(PROVINCES, 0x804000ff, "Puebla"); 
+            hmput(PROVINCES, 0xb18e93ff, "Campeche"); 
+            hmput(PROVINCES, 0xd2beadff, "Yucatan"); 
+            hmput(PROVINCES, 0xf4948bff, "Quintana Roo"); 
+            hmput(PROVINCES, 0xff0080ff, "Mexico City"); 
+            hmput(PROVINCES, 0xffff80ff, "Aguascalientes"); 
+            hmput(PROVINCES, 0x800080ff, "Guanajuato"); 
+            hmput(PROVINCES, 0x0080ffff, "Queretaro"); 
+            hmput(PROVINCES, 0x004080ff, "Hidalgo"); 
+            hmput(PROVINCES, 0x00ff80ff, "State of Mexico"); 
+            hmput(PROVINCES, 0x4000ffff, "Morelos"); 
+            hmput(PROVINCES, 0xff8040ff, "Tlaxcala"); 
             assert(hmlen(PROVINCES) == 32);
             break;
         };
 
         case MAP_BRAZIL: {
-            hmput(PROVINCES, 0x808080, "Acre");
-            hmput(PROVINCES, 0x008000, "Rondonia");
-            hmput(PROVINCES, 0x800000, "Amazonas");
-            hmput(PROVINCES, 0xff0000, "Roraima");
-            hmput(PROVINCES, 0x808000, "Para");
-            hmput(PROVINCES, 0xffff00, "Amapa");
-            hmput(PROVINCES, 0x00ff00, "Mato Grosso");
-            hmput(PROVINCES, 0xff8040, "Mato Grosso Do Sul");
-            hmput(PROVINCES, 0x00ffff, "Maranhao");
-            hmput(PROVINCES, 0x008080, "Tocantins");
-            hmput(PROVINCES, 0x000080, "Goias");
-            hmput(PROVINCES, 0x800080, "Piaui");
-            hmput(PROVINCES, 0xff00ff, "Ceara");
-            hmput(PROVINCES, 0x808040, "Rio Grande do Norte");
-            hmput(PROVINCES, 0xffff80, "Paraiba");
-            hmput(PROVINCES, 0x004040, "Pernambuco");
-            hmput(PROVINCES, 0x80ffff, "Alagoas");
-            hmput(PROVINCES, 0x004080, "Sergipe");
-            hmput(PROVINCES, 0x8080ff, "Bahia");
-            hmput(PROVINCES, 0x4000ff, "Minas Gerais");
-            hmput(PROVINCES, 0x00272b, "Espirito Santo");
-            hmput(PROVINCES, 0xff665b, "Rio de Janeiro");
-            hmput(PROVINCES, 0x804000, "Sao Paulo");
-            hmput(PROVINCES, 0xd5c619, "Parana");
-            hmput(PROVINCES, 0x192a51, "Santa Catarina");
-            hmput(PROVINCES, 0xe3dc95, "Rio Grande do Sul");
-            hmput(PROVINCES, 0xff0080, "Federal District");
+            hmput(PROVINCES, 0x808080ff, "Acre");
+            hmput(PROVINCES, 0x008000ff, "Rondonia");
+            hmput(PROVINCES, 0x800000ff, "Amazonas");
+            hmput(PROVINCES, 0xff0000ff, "Roraima");
+            hmput(PROVINCES, 0x808000ff, "Para");
+            hmput(PROVINCES, 0xffff00ff, "Amapa");
+            hmput(PROVINCES, 0x00ff00ff, "Mato Grosso");
+            hmput(PROVINCES, 0xff8040ff, "Mato Grosso Do Sul");
+            hmput(PROVINCES, 0x00ffffff, "Maranhao");
+            hmput(PROVINCES, 0x008080ff, "Tocantins");
+            hmput(PROVINCES, 0x000080ff, "Goias");
+            hmput(PROVINCES, 0x800080ff, "Piaui");
+            hmput(PROVINCES, 0xff00ffff, "Ceara");
+            hmput(PROVINCES, 0x808040ff, "Rio Grande do Norte");
+            hmput(PROVINCES, 0xffff80ff, "Paraiba");
+            hmput(PROVINCES, 0x004040ff, "Pernambuco");
+            hmput(PROVINCES, 0x80ffffff, "Alagoas");
+            hmput(PROVINCES, 0x004080ff, "Sergipe");
+            hmput(PROVINCES, 0x8080ffff, "Bahia");
+            hmput(PROVINCES, 0x4000ffff, "Minas Gerais");
+            hmput(PROVINCES, 0x00272bff, "Espirito Santo");
+            hmput(PROVINCES, 0xff665bff, "Rio de Janeiro");
+            hmput(PROVINCES, 0x804000ff, "Sao Paulo");
+            hmput(PROVINCES, 0xd5c619ff, "Parana");
+            hmput(PROVINCES, 0x192a51ff, "Santa Catarina");
+            hmput(PROVINCES, 0xe3dc95ff, "Rio Grande do Sul");
+            hmput(PROVINCES, 0xff0080ff, "Federal District");
             assert(hmlen(PROVINCES) == 27);
             break;
         }
 
         case MAP_JAPAN: {
-            hmput(PROVINCES, 0xed1c24, "Hokkaido"); 
-            hmput(PROVINCES, 0xff7f27, "Aomori"); 
-            hmput(PROVINCES, 0x22b14c, "Iwate"); 
-            hmput(PROVINCES, 0xfff200, "Akita"); 
-            hmput(PROVINCES, 0xa349a4, "Miyagi"); 
-            hmput(PROVINCES, 0x3f48cc, "Yamagata"); 
-            hmput(PROVINCES, 0x00ff00, "Fukushima"); 
-            hmput(PROVINCES, 0xffc90e, "Ibaraki"); 
-            hmput(PROVINCES, 0xb5e61d, "Tochigi"); 
-            hmput(PROVINCES, 0x99d9ea, "Gunma"); 
-            hmput(PROVINCES, 0x8000ff, "Saitama"); 
-            hmput(PROVINCES, 0xff00ff, "Chiba");
-            hmput(PROVINCES, 0xff0080, "Tokyo"); 
-            hmput(PROVINCES, 0x808000, "Kanagawa");
-            hmput(PROVINCES, 0xffaec9, "Niigata"); 
-            hmput(PROVINCES, 0xc8bfe7, "Toyama");
-            hmput(PROVINCES, 0x312893, "Ishikawa"); 
-            hmput(PROVINCES, 0x4ffdfd, "Fukui");
-            hmput(PROVINCES, 0x4bc6d3, "Yamanashi"); 
-            hmput(PROVINCES, 0x7092be, "Nagano");
-            hmput(PROVINCES, 0xfb717b, "Gifu"); 
-            hmput(PROVINCES, 0x4f803c, "Shizuoka");
-            hmput(PROVINCES, 0x9a7dee, "Aichi"); 
-            hmput(PROVINCES, 0x9ad1a2, "Mie"); 
-            hmput(PROVINCES, 0xf0e65b, "Shiga"); 
-            hmput(PROVINCES, 0x05e437, "Kyoto");
-            hmput(PROVINCES, 0xa06849, "Osaka"); 
-            hmput(PROVINCES, 0x8dd812, "Hyogo");
-            hmput(PROVINCES, 0xc487c5, "Nara"); 
-            hmput(PROVINCES, 0xd713d1, "Wakayama"); 
-            hmput(PROVINCES, 0xb5d2b3, "Tottori"); 
-            hmput(PROVINCES, 0xfafa8b, "Shimane");
-            hmput(PROVINCES, 0xf7948e, "Okayama"); 
-            hmput(PROVINCES, 0xdbaab8, "Hiroshima");
-            hmput(PROVINCES, 0xd89ee7, "Yamaguchi"); 
-            hmput(PROVINCES, 0xdec6a7, "Tokushima"); 
-            hmput(PROVINCES, 0x88cefd, "Kagawa"); 
-            hmput(PROVINCES, 0x97ee9d, "Ehime");
-            hmput(PROVINCES, 0xadaed8, "Kochi"); 
-            hmput(PROVINCES, 0xc4bacb, "Fukuoka");
-            hmput(PROVINCES, 0x98edc9, "Saga"); 
-            hmput(PROVINCES, 0x91fefc, "Nagasaki"); 
-            hmput(PROVINCES, 0xbf9ee7, "Kumamoto"); 
-            hmput(PROVINCES, 0xf88dad, "Oita");
-            hmput(PROVINCES, 0xabdad1, "Miyazaki"); 
-            hmput(PROVINCES, 0xfab88b, "Kagoshima");
-            hmput(PROVINCES, 0x0000ff, "Okinawa");
+            hmput(PROVINCES, 0xed1c24ff, "Hokkaido"); 
+            hmput(PROVINCES, 0xff7f27ff, "Aomori"); 
+            hmput(PROVINCES, 0x22b14cff, "Iwate"); 
+            hmput(PROVINCES, 0xfff200ff, "Akita"); 
+            hmput(PROVINCES, 0xa349a4ff, "Miyagi"); 
+            hmput(PROVINCES, 0x3f48ccff, "Yamagata"); 
+            hmput(PROVINCES, 0x00ff00ff, "Fukushima"); 
+            hmput(PROVINCES, 0xffc90eff, "Ibaraki"); 
+            hmput(PROVINCES, 0xb5e61dff, "Tochigi"); 
+            hmput(PROVINCES, 0x99d9eaff, "Gunma"); 
+            hmput(PROVINCES, 0x8000ffff, "Saitama"); 
+            hmput(PROVINCES, 0xff00ffff, "Chiba");
+            hmput(PROVINCES, 0xff0080ff, "Tokyo"); 
+            hmput(PROVINCES, 0x808000ff, "Kanagawa");
+            hmput(PROVINCES, 0xffaec9ff, "Niigata"); 
+            hmput(PROVINCES, 0xc8bfe7ff, "Toyama");
+            hmput(PROVINCES, 0x312893ff, "Ishikawa"); 
+            hmput(PROVINCES, 0x4ffdfdff, "Fukui");
+            hmput(PROVINCES, 0x4bc6d3ff, "Yamanashi"); 
+            hmput(PROVINCES, 0x7092beff, "Nagano");
+            hmput(PROVINCES, 0xfb717bff, "Gifu"); 
+            hmput(PROVINCES, 0x4f803cff, "Shizuoka");
+            hmput(PROVINCES, 0x9a7deeff, "Aichi"); 
+            hmput(PROVINCES, 0x9ad1a2ff, "Mie"); 
+            hmput(PROVINCES, 0xf0e65bff, "Shiga"); 
+            hmput(PROVINCES, 0x05e437ff, "Kyoto");
+            hmput(PROVINCES, 0xa06849ff, "Osaka"); 
+            hmput(PROVINCES, 0x8dd812ff, "Hyogo");
+            hmput(PROVINCES, 0xc487c5ff, "Nara"); 
+            hmput(PROVINCES, 0xd713d1ff, "Wakayama"); 
+            hmput(PROVINCES, 0xb5d2b3ff, "Tottori"); 
+            hmput(PROVINCES, 0xfafa8bff, "Shimane");
+            hmput(PROVINCES, 0xf7948eff, "Okayama"); 
+            hmput(PROVINCES, 0xdbaab8ff, "Hiroshima");
+            hmput(PROVINCES, 0xd89ee7ff, "Yamaguchi"); 
+            hmput(PROVINCES, 0xdec6a7ff, "Tokushima"); 
+            hmput(PROVINCES, 0x88cefdff, "Kagawa"); 
+            hmput(PROVINCES, 0x97ee9dff, "Ehime");
+            hmput(PROVINCES, 0xadaed8ff, "Kochi"); 
+            hmput(PROVINCES, 0xc4bacbff, "Fukuoka");
+            hmput(PROVINCES, 0x98edc9ff, "Saga"); 
+            hmput(PROVINCES, 0x91fefcff, "Nagasaki"); 
+            hmput(PROVINCES, 0xbf9ee7ff, "Kumamoto"); 
+            hmput(PROVINCES, 0xf88dadff, "Oita");
+            hmput(PROVINCES, 0xabdad1ff, "Miyazaki"); 
+            hmput(PROVINCES, 0xfab88bff, "Kagoshima");
+            hmput(PROVINCES, 0x0000ffff, "Okinawa");
             assert(hmlen(PROVINCES) == 47);
             break;
         }
@@ -317,12 +322,46 @@ Rectangle project_rectangle(Rectangle r_abs)
     return CLITERAL(Rectangle){ul_t.x, ul_t.y, lr_t.x - ul_t.x, lr_t.y - ul_t.y }; 
 }
 
+void mark_province(Image bw_map, Image color_map, Color target_color, Color mark_color)
+{
+    for (int px = 0; px < color_map.width; ++px) {
+        for (int py = 0; py < color_map.height; ++py) {
+            Color current_color = GetImageColor(color_map, px, py);
+            if ((current_color.r == target_color.r) && 
+                (current_color.g == target_color.g) && 
+                (current_color.b == target_color.b) && 
+                (current_color.a == target_color.a)) {
+                ImageDrawPixel(&bw_map, px, py, mark_color);
+            }
+        }
+    } 
+}
+
+int mark_province_by_name(Image bw_map, Image color_map, const char *name, Color mark_color)
+{
+    Province* p = NULL;
+    for (int i = 0; i < hmlen(PROVINCES); ++i) {
+        if (strcmp(name, PROVINCES[i].value) == 0) {
+            p = &PROVINCES[i];
+        } 
+    }
+
+    if (p == NULL) return -1;
+
+    printf("(mark_province_by_name) FOUND p!\n");
+    mark_province(bw_map, color_map, GetColor(p->key), mark_color);
+
+    return 0; 
+}
+
 void quiz(Rec *rec, Province **hidden_province)
 {
     static bool draw_wrong_msg = false;
     Province *p;
 
-    if (any_provinces_left_to_guess()) {
+    static size_t errors_current_round = 0;
+
+    if (!any_provinces_left_to_guess()) {
         state = VICTORY;
     }
 
@@ -346,9 +385,9 @@ void quiz(Rec *rec, Province **hidden_province)
             Image bw_map    = COUNTRIES.items[active_map].bw_map;
 
             Color c = GetImageColor(color_map, imgx, imgy);
-            unsigned long hex = rgb_to_hex(c.r, c.g, c.b);
+            unsigned int hex = ColorToInt(c); 
 
-            printf("Click is inside! imgx = %d; imgy = %d; color: (%d, %d, %d, %d) => #%06lx\n", 
+            printf("Click is inside! imgx = %d; imgy = %d; color: (%d, %d, %d, %d) => #%08x\n", 
                     imgx, imgy, c.r, c.g, c.b, c.a, hex);
 
             int i = hmgeti(PROVINCES, hex);
@@ -357,33 +396,60 @@ void quiz(Rec *rec, Province **hidden_province)
 
                 if (strcmp(p->value, (*hidden_province)->value) == 0) {
                     //printf("Province name = %s\n", province_name);
-
-                    for (int px = 0; px < color_map.width; ++px) {
-                        for (int py = 0; py < color_map.height; ++py) {
-                            Color current_color = GetImageColor(color_map, px, py);
-                            if ((current_color.r == c.r) && 
-                                    (current_color.g == c.g) && 
-                                    (current_color.b == c.b) && 
-                                    (current_color.a == c.a)) {
-                                ImageDrawPixel(&bw_map, px, py, COLOR_CORRECT_PROVINCE);
-                            }
-                        }
-                    } 
+                    
+                    if (errors_current_round == 0) {
+                        mark_province(bw_map, color_map, c, COLOR_GUESSED_PERFECT_PROVINCE);
+                       
+                    #ifdef DEBUG_SAVE_MAP_TO_PNG    
+                        printf("Writing colored map to temp file!\n");
+                        ExportImage(bw_map, "temp-map.png");
+                    #endif
+                    } else {
+                        mark_province(bw_map, color_map, c, COLOR_GUESSED_WERRORS_PROVINCE);
+                        errors_current_round = 0;
+                    }
 
                     UnloadTexture(map_texture);
                     map_texture = LoadTextureFromImage(bw_map);
 
                     (*hidden_province)->guessed = true;
+
                     if (any_provinces_left_to_guess()) {
+                        *hidden_province = select_random_province();
+                    } else {
                         state = VICTORY;
+                        *hidden_province = NULL;
                         return;
                     }
-
-                    *hidden_province = select_random_province();
 
                 } else {
                     error_counter += 1;
                     draw_wrong_msg = true;
+
+                    errors_current_round += 1;
+                    if (errors_current_round >= MAX_ERRORS_CURRENT_ROUND) {
+                        unsigned int key = (*hidden_province)->key; 
+                        Color target_color = GetColor(key);
+                        printf("Marking PROVINCE=`%s`; target_color=(%d,%d,%d,%d) = #%06x with INCORRECT_COLOR\n", (*hidden_province)->value,
+                               target_color.r, target_color.g, target_color.b, target_color.a, 
+                               key);
+
+                        mark_province(bw_map, color_map, target_color, COLOR_INCORRECT_PROVINCE);
+                        //mark_province_by_name(bw_map, color_map, "Veracruz", YELLOW);
+                        UnloadTexture(map_texture);
+                        map_texture = LoadTextureFromImage(bw_map);
+
+                        (*hidden_province)->guessed = true;
+                        if (any_provinces_left_to_guess()) {
+                            *hidden_province = select_random_province();
+                        } else {
+                            state = VICTORY;
+                            *hidden_province = NULL;
+                            return;
+                        }
+                        
+                        errors_current_round = 0;
+                    }
                 }
             } else {
                 printf("Province name unknown! Possibly a border has been clicked. \n\n");
@@ -435,7 +501,7 @@ skip_if:
     }
 }
 
-void victory(Rec *rec) 
+void victory() 
 {
     Rectangle status_bar = project_rectangle(CLITERAL(Rectangle) {
         .x = GetScreenWidth() * PANEL_WIDTH,
@@ -497,9 +563,9 @@ void learn(Rec *rec)
             Image bw_map    = COUNTRIES.items[active_map].bw_map;
 
             Color c = GetImageColor(color_map, imgx, imgy);
-            unsigned long hex = rgb_to_hex(c.r, c.g, c.b);
+            unsigned int hex = ColorToInt(c);
 
-            printf("Click is inside! imgx = %d; imgy = %d; color: (%d, %d, %d, %d) => #%06lx\n", 
+            printf("Click is inside! imgx = %d; imgy = %d; color: (%d, %d, %d, %d) => #%08x\n", 
                     imgx, imgy, c.r, c.g, c.b, c.a, hex);
 
             int i = hmgeti(PROVINCES, hex);
@@ -627,7 +693,7 @@ void panel_countries(Rectangle panel_boundary, Province **hidden_province)
                 .height = entry_size - panel_padding * 2});
         
         Color color;
-        if ((int) i != active_map) {
+        if ((int) i != (int) active_map) {
             int button_state = button(menu_entry);
             if (button_state & BS_HOVEROVER) {
                 color = COLOR_PANEL_BUTTON_HOVEROVER;
@@ -683,6 +749,8 @@ int main()
     country_item.bw_map_filename    = "resources/mexico-black-white.png";
     country_item.color_map          = LoadImage(country_item.color_map_filename);
     country_item.bw_map             = LoadImage(country_item.bw_map_filename);
+    ImageFormat(&country_item.bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
     assert((country_item.color_map.width == country_item.bw_map.width) && 
            (country_item.color_map.height == country_item.bw_map.height));
     da_append(&COUNTRIES, country_item);
@@ -692,6 +760,8 @@ int main()
     country_item.bw_map_filename    = "resources/brazil-black-white.png";
     country_item.color_map          = LoadImage(country_item.color_map_filename);
     country_item.bw_map             = LoadImage(country_item.bw_map_filename);
+    ImageFormat(&country_item.bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
     assert((country_item.color_map.width == country_item.bw_map.width) && 
            (country_item.color_map.height == country_item.bw_map.height));
     da_append(&COUNTRIES, country_item);
@@ -701,6 +771,8 @@ int main()
     country_item.bw_map_filename    = "resources/japan-black-white.png";
     country_item.color_map          = LoadImage(country_item.color_map_filename);
     country_item.bw_map             = LoadImage(country_item.bw_map_filename);
+    ImageFormat(&country_item.bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
     assert((country_item.color_map.width == country_item.bw_map.width) && 
            (country_item.color_map.height == country_item.bw_map.height));
     da_append(&COUNTRIES, country_item);
@@ -730,11 +802,18 @@ int main()
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
 
     RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
-    SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
+    //SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
 
     fill_provinces(active_map);
+
+    for (int i = 0; i < hmlen(PROVINCES); ++i) {
+        Province *p = &PROVINCES[i];
+        Color c = GetColor(p->key);
+        printf("#%08lx :: Color=(%d,%d,%d,%d) => %s\n", p->key, c.r, c.g, c.b, c.a, p->value); 
+    }
+
     map_texture = LoadTextureFromImage(COUNTRIES.items[active_map].bw_map);
-    SetTextureFilter(map_texture, TEXTURE_FILTER_BILINEAR);
+    //SetTextureFilter(map_texture, TEXTURE_FILTER_BILINEAR);
 
     Province* hidden_province = select_random_province();
     
@@ -850,7 +929,7 @@ int main()
             }
             
             case VICTORY: {
-                victory(&rec);
+                victory();
                 break;
             }
 

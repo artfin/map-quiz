@@ -2,7 +2,7 @@
 
 CC=gcc
 
-CFLAGS="-ggdb -Wall"
+CFLAGS="-ggdb -Wall -Wextra"
 INC="-I./raylib/include"
 LIB="-L./raylib/lib -lraylib -lm -ldl -lpthread"
 
