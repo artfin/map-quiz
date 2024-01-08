@@ -30,7 +30,7 @@
 #define FONT_SIZE_LOAD 160 
 
 #define MIN_CAMERA_ZOOM 0.9f
-#define MAX_CAMERA_ZOOM 2.5f
+#define MAX_CAMERA_ZOOM 3.0f
 
 #define HUD_LIFETIME 0.7 
 #define HUD_DEFAULT_FONTSIZE 50
@@ -39,20 +39,23 @@
 
 #define COLOR_TEXT_DEFAULT GetColor(0xDF2935FF)
 
-#define PANEL_WIDTH 0.15
+#define COUNTRIES_PANEL_WIDTH  0.15
+#define COUNTRIES_PANEL_HEIGHT 0.86
+
 #define COLOR_PANEL_BUTTON           GetColor(0xAD343EFF) 
 #define COLOR_PANEL_BUTTON_SELECTED  GetColor(0xF2AF29FF)
 #define COLOR_PANEL_BUTTON_HOVEROVER ColorBrightness(COLOR_PANEL_BUTTON, 0.2)
 
+#define MAX_ERRORS_CURRENT_ROUND 3
+
 #define COLOR_BACKGROUND                 GetColor(0x181818FF)
 #define COLOR_COUNTRIES_PANEL_BACKGROUND GetColor(0xDDDBCBFF) 
-#define COLOR_LEARN_PROVINCE             GetColor(0xE9E9E9FF)
+#define COLOR_CONTROL_PANEL_BACKGROUND   GetColor(0xDDDBCBFF)
+#define COLOR_GUESSED_PERFECT_PROVINCE   GetColor(0xE9E9E9FF)
+#define COLOR_GUESSED_WERRORS_PROVINCE   GetColor(0xFFF370FF)
+#define COLOR_INCORRECT_PROVINCE         GetColor(0xB52A2AFF) 
+#define COLOR_LEARN_PROVINCE             COLOR_GUESSED_PERFECT_PROVINCE 
 #define COLOR_VICTORY                    ColorBrightness(GetColor(0x7DD181FF), -0.3)
-
-#define MAX_ERRORS_CURRENT_ROUND 3
-#define COLOR_GUESSED_PERFECT_PROVINCE GetColor(0xE9E9E9FF)
-#define COLOR_GUESSED_WERRORS_PROVINCE GetColor(0xFFF370FF)
-#define COLOR_INCORRECT_PROVINCE       GetColor(0xB52A2AFF) 
 
 // -------------------------------------------------------------------------------------------
 // Copyright 2023 Alexey Kutepov <reximkut@gmail.com>
@@ -148,12 +151,12 @@ GameState state = QUIZ;
 ActiveMap active_map = MAP_MEXICO; // counter in the COUNTRIES array 
 
 typedef struct {
-    const char *name;
+    char *name;
 
-    const char* color_map_filename;
+    char* color_map_filename;
     Image color_map;
 
-    const char* bw_map_filename;
+    char* bw_map_filename;
     Image bw_map; 
 } Country;
 
@@ -164,6 +167,44 @@ typedef struct {
 } Countries;
 
 Countries COUNTRIES = {0};
+
+Country* load_country(const char* country_name)
+{
+    Country country_item = {0};
+   
+    country_item.name = malloc(TextLength(country_name) + 1);
+    TextCopy(country_item.name, country_name); 
+
+    const char *tmp;    
+    tmp = TextFormat("resources/%s-colored.png", TextToLower(country_item.name));
+    country_item.color_map_filename = malloc(TextLength(tmp) + 1);
+    TextCopy(country_item.color_map_filename, tmp);
+
+    tmp = TextFormat("resources/%s-black-white.png", TextToLower(country_item.name)); 
+    country_item.bw_map_filename = malloc(TextLength(tmp) + 1);
+    TextCopy(country_item.bw_map_filename, tmp);
+
+    country_item.color_map = LoadImage(country_item.color_map_filename);
+    country_item.bw_map    = LoadImage(country_item.bw_map_filename);
+    ImageFormat(&country_item.bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
+    assert((country_item.color_map.width   == country_item.bw_map.width) &&
+            (country_item.color_map.height == country_item.bw_map.height));
+    da_append(&COUNTRIES, country_item);
+
+    return &COUNTRIES.items[COUNTRIES.count - 1];
+}
+
+Country* reload_country(size_t i)
+{
+    assert(i < COUNTRIES.count);
+
+    Country* c = &COUNTRIES.items[i];
+    c->bw_map = LoadImage(c->bw_map_filename);
+    ImageFormat(&c->bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
+    return c;
+}
 
 void fill_provinces(int country_counter) {
     hmfree(PROVINCES);
@@ -366,7 +407,7 @@ void quiz(Rec *rec, Province **hidden_province)
     }
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if (GetMouseX() < GetScreenWidth() * PANEL_WIDTH) goto skip_if;
+        if (GetMouseX() < GetScreenWidth() * COUNTRIES_PANEL_WIDTH) goto skip_if;
 
         Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
 
@@ -459,15 +500,15 @@ void quiz(Rec *rec, Province **hidden_province)
 
 skip_if:
     Rectangle status_bar = project_rectangle(CLITERAL(Rectangle) {
-        .x = GetScreenWidth() * PANEL_WIDTH,
+        .x = GetScreenWidth() * COUNTRIES_PANEL_WIDTH,
         .y = 0.0,
-        .width = GetScreenWidth() * (1.0 - PANEL_WIDTH),
+        .width = GetScreenWidth() * (1.0 - COUNTRIES_PANEL_WIDTH),
         .height = 65.0});
 
     DrawRectangleRec(status_bar, ColorBrightness(COLOR_BACKGROUND, 0.2));
 
     float padding = 0.01 * GetScreenHeight();
-    Vector2 pos_find_str = GetScreenToWorld2D(CLITERAL(Vector2) {PANEL_WIDTH*GetScreenWidth() + 3*padding, padding}, camera);
+    Vector2 pos_find_str = GetScreenToWorld2D(CLITERAL(Vector2) {COUNTRIES_PANEL_WIDTH*GetScreenWidth() + 3*padding, padding}, camera);
 
     Vector2 pos_errors_str = GetScreenToWorld2D(CLITERAL(Vector2) {
             GetScreenWidth() - 270.0, padding 
@@ -486,13 +527,17 @@ skip_if:
         lifetime_wrong_msg -= dt;       
 
         if (lifetime_wrong_msg > 0) {   
-            Vector2 pos = CLITERAL(Vector2) {
-                rec->ul.x + 0.4 * DEFAULT_IMAGE_SCALE*map_texture.width,
-                rec->ul.y + 0.5 * DEFAULT_IMAGE_SCALE*map_texture.height 
-            };
+            const char* text = "Wrong!"; 
+            float fontsize = HUD_LARGE_FONTSIZE / camera.zoom;
+            Vector2 text_len = MeasureTextEx(font, text, fontsize, 0);
+
+            Vector2 text_pos = GetScreenToWorld2D(CLITERAL(Vector2) {
+                GetScreenWidth()/2 - text_len.x/2, 
+                GetScreenHeight()/2 - text_len.y/2 
+            }, camera);
 
             BeginShaderMode(shader);
-            DrawTextEx(font, "Wrong!", pos, HUD_LARGE_FONTSIZE, 0, RED);
+            DrawTextEx(font, text, text_pos, fontsize, 0, RED);
             EndShaderMode();
         } else {
             draw_wrong_msg = false;
@@ -504,9 +549,9 @@ skip_if:
 void victory() 
 {
     Rectangle status_bar = project_rectangle(CLITERAL(Rectangle) {
-        .x = GetScreenWidth() * PANEL_WIDTH,
+        .x = GetScreenWidth() * COUNTRIES_PANEL_WIDTH,
         .y = 0.0,
-        .width = GetScreenWidth() * (1.0 - PANEL_WIDTH),
+        .width = GetScreenWidth() * (1.0 - COUNTRIES_PANEL_WIDTH),
         .height = 65.0});
 
     DrawRectangleRec(status_bar, ColorBrightness(COLOR_BACKGROUND, 0.2));
@@ -528,24 +573,23 @@ void victory()
 
 void learn(Rec *rec)
 {
-    const char* text = "Learn provinces"; 
-    Vector2 text_len = MeasureTextEx(font, text, HUD_DEFAULT_FONTSIZE, 0);
-    
-    Vector2 title_pos = CLITERAL(Vector2) {
-        rec->ul.x + 0.5 * DEFAULT_IMAGE_SCALE*rec->width - 0.5*text_len.x, 
-        rec->ul.y + 0.01 * DEFAULT_IMAGE_SCALE*rec->height
-    };
-
-    BeginShaderMode(shader);
-    DrawTextEx(font, text, title_pos, HUD_DEFAULT_FONTSIZE, 0, WHITE);
-    EndShaderMode();
-   
     static bool show_warning_msg = false;
     static bool show_province_name = false;
-    
+ 
+    /*
+     * The name of the clicked province is displayed using the pointer `p`.
+     * The pointer p is outdated if the `active_map` has changed between the `learn` calls. 
+     * We must first check for this before utilizing the pointer.
+     */
+    static ActiveMap local_active_map = 0; 
     static Province *p = NULL;
 
+    int screen_width = GetScreenWidth();
+    int screen_height = GetScreenHeight();
+
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (GetMouseX() < GetScreenWidth() * COUNTRIES_PANEL_WIDTH) goto skip_if;
+
         Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
 
         printf("mouse.x: %.5lf; mouse.y: %.5lf\n", mouse.x, mouse.y);
@@ -556,8 +600,8 @@ void learn(Rec *rec)
         if ( (mouse.x < rec->ul.x) || (mouse.x > rec->lr.x) || (mouse.y < rec->ul.y) || (mouse.y > rec->lr.y)) {
             printf("Click is outside the image!\n");
         } else {
-            int imgx = (int) ( (mouse.x - (GetScreenWidth()/2 - DEFAULT_IMAGE_SCALE*rec->width/2)) / DEFAULT_IMAGE_SCALE);
-            int imgy = (int) ( (mouse.y - (GetScreenHeight()/2 - DEFAULT_IMAGE_SCALE*rec->height/2)) / DEFAULT_IMAGE_SCALE);
+            int imgx = (int) ( (mouse.x - (screen_width/2 - DEFAULT_IMAGE_SCALE*rec->width/2)) / DEFAULT_IMAGE_SCALE);
+            int imgy = (int) ( (mouse.y - (screen_height/2 - DEFAULT_IMAGE_SCALE*rec->height/2)) / DEFAULT_IMAGE_SCALE);
 
             Image color_map = COUNTRIES.items[active_map].color_map;
             Image bw_map    = COUNTRIES.items[active_map].bw_map;
@@ -600,21 +644,20 @@ void learn(Rec *rec)
                 map_texture = LoadTextureFromImage(bw_map);
 
                 p->center = CLITERAL(Vector2) {
-                    0.5 * (min_x + max_x) * DEFAULT_IMAGE_SCALE,
-                    0.5 * (min_y + max_y) * DEFAULT_IMAGE_SCALE
+                    (min_x + max_x)/2*DEFAULT_IMAGE_SCALE + (screen_width/2 - DEFAULT_IMAGE_SCALE*rec->width/2),
+                    (min_y + max_y)/2*DEFAULT_IMAGE_SCALE + (screen_height/2 - DEFAULT_IMAGE_SCALE*rec->height/2)
                 };
 
+                local_active_map = active_map;
                 show_province_name = true;
 
-                printf("min_x: %d; max_x: %d\n", min_x, max_x);
-                printf("min_y: %d; max_y: %d\n", min_y, max_y);
-                
             } else {
                 show_warning_msg = true;
             }
         }
     }
 
+skip_if:
     static float warning_msg_lifetime = HUD_LIFETIME;
 
     if (show_warning_msg) {
@@ -622,15 +665,16 @@ void learn(Rec *rec)
 
         if (warning_msg_lifetime > 0) {
             const char* text = "Click a province"; 
-            Vector2 text_len = MeasureTextEx(font, text, HUD_LARGE_FONTSIZE, 0);
+            float fontsize = HUD_LARGE_FONTSIZE / camera.zoom;
+            Vector2 text_len = MeasureTextEx(font, text, fontsize, 0);
 
-            Vector2 title_pos = CLITERAL(Vector2) {
-                rec->ul.x + 0.5 * DEFAULT_IMAGE_SCALE*rec->width - 0.5*text_len.x, 
-                rec->ul.y + 0.5 * DEFAULT_IMAGE_SCALE*rec->height - 0.5*text_len.y
-            };
+            Vector2 title_pos = GetScreenToWorld2D(CLITERAL(Vector2) {
+                GetScreenWidth()/2 - text_len.x/2, 
+                GetScreenHeight()/2 - text_len.y/2 
+            }, camera);
 
             BeginShaderMode(shader);
-            DrawTextEx(font, text, title_pos, HUD_LARGE_FONTSIZE, 0, RED);
+            DrawTextEx(font, text, title_pos, fontsize, 0, RED);
             EndShaderMode();
         } else {
             warning_msg_lifetime = HUD_LIFETIME;
@@ -638,17 +682,27 @@ void learn(Rec *rec)
         }
     }
 
-    static float province_name_lifetime = HUD_LIFETIME;
+    static float province_name_lifetime = 3*HUD_LIFETIME;
 
     if (show_province_name) {
+        if (active_map != local_active_map) return;
+
         province_name_lifetime -= GetFrameTime();
 
         if (province_name_lifetime > 0) {
+            float fontsize = 40 / camera.zoom;
+            Vector2 name_len = MeasureTextEx(font, p->value, fontsize, 0);
+
+            Vector2 name_pos = CLITERAL(Vector2) {
+                p->center.x - name_len.x/2,
+                p->center.y - name_len.y/2
+            };
+
             BeginShaderMode(shader);
-            DrawTextEx(font, TextFormat("%s", p->value), p->center, 60, 0, RED);
+            DrawTextEx(font, p->value, name_pos, fontsize, 0, RED);
             EndShaderMode();
         } else {
-            province_name_lifetime = HUD_LIFETIME;
+            province_name_lifetime = 3*HUD_LIFETIME;
             show_province_name = false;
         }
     }
@@ -673,9 +727,9 @@ int button(Rectangle boundary)
     return (clicked << 1) | hoverover;
 }
 
-void panel_countries(Rectangle panel_boundary, Province **hidden_province)
+void countries_panel(Rectangle panel_boundary, Province **hidden_province)
 {
-    DrawRectangleRec(project_rectangle(panel_boundary), COLOR_COUNTRIES_PANEL_BACKGROUND);
+    DrawRectangleRounded(project_rectangle(panel_boundary), 0.1, 4, COLOR_COUNTRIES_PANEL_BACKGROUND);
 
     //float scroll_bar_width = 0.03 * panel_boundary.width;
 
@@ -702,22 +756,17 @@ void panel_countries(Rectangle panel_boundary, Province **hidden_province)
             }
 
             if (button_state & BS_CLICKED) {
-                Country *country = &COUNTRIES.items[active_map];
-                country->bw_map = LoadImage(country->bw_map_filename);
-                map_texture = LoadTextureFromImage(country->bw_map);
-
                 active_map = i;
                 camera.zoom = 1.0;
 
-                map_texture = LoadTextureFromImage(COUNTRIES.items[i].bw_map);
+                Country* c = reload_country((size_t) active_map);
+                map_texture = LoadTextureFromImage(c->bw_map);
             
-                fill_provinces(i);
+                fill_provinces(active_map);
 
                 *hidden_province = select_random_province();
 
                 error_counter = 0; 
-
-                state = QUIZ; 
             }
         } else {
             color = COLOR_PANEL_BUTTON_SELECTED;
@@ -738,44 +787,106 @@ void panel_countries(Rectangle panel_boundary, Province **hidden_province)
     }
 }
 
+void control_panel(Rectangle panel_boundary)
+{
+    DrawRectangleRounded(project_rectangle(panel_boundary), 0.2, 7, COLOR_CONTROL_PANEL_BACKGROUND);
+    
+    float panel_padding = 0.02 * panel_boundary.width;
+    float entry_size = 85.0;
+
+    Rectangle quiz_button = project_rectangle(CLITERAL(Rectangle) {
+        .x = panel_boundary.x + panel_padding,
+        .y = panel_boundary.y + panel_padding,
+        .width = panel_boundary.width/2 - 2*panel_padding,
+        .height = entry_size - 2*panel_padding,
+    });
+    {
+        int button_state = button(quiz_button);
+
+        Color color;
+        if (state == QUIZ) {
+            color = COLOR_PANEL_BUTTON_SELECTED;
+        } else {
+            color = COLOR_PANEL_BUTTON;
+        }
+
+        if (button_state & BS_CLICKED) {
+            Country *c = reload_country((size_t) active_map);
+
+            UnloadTexture(map_texture);
+            map_texture = LoadTextureFromImage(c->bw_map);
+
+            state = QUIZ;
+        }
+        
+        DrawRectangleRounded(quiz_button, 0.5, 10, color);
+        float fontsize = 40 / camera.zoom;
+        const char* text = "Quiz";
+        Vector2 text_len = MeasureTextEx(font, text, fontsize, 0);
+
+        Vector2 text_pos = CLITERAL(Vector2) {
+            quiz_button.x + 0.5 * quiz_button.width - 0.5 * text_len.x, 
+            quiz_button.y + 0.5 * quiz_button.height - 0.5 * text_len.y
+        };
+
+        BeginShaderMode(shader);
+        DrawTextEx(font, text, text_pos, fontsize, 0, WHITE);
+        EndShaderMode();
+    }
+
+    Rectangle learn_button = project_rectangle(CLITERAL(Rectangle) {
+       .x = panel_boundary.x + panel_boundary.width/2 + panel_padding,
+       .y = panel_boundary.y + panel_padding,
+       .width = panel_boundary.width/2 - 2*panel_padding, 
+       .height = entry_size - 2*panel_padding 
+    });
+    {
+        int button_state = button(learn_button);
+
+        Color color;
+        if (state == LEARN) {
+            color = COLOR_PANEL_BUTTON_SELECTED;
+        } else {
+            if (button_state & BS_HOVEROVER) {
+                color = COLOR_PANEL_BUTTON_HOVEROVER;
+            } else {
+                color = COLOR_PANEL_BUTTON;
+            }
+
+            if (button_state & BS_CLICKED) {
+                Country *c = reload_country((size_t) active_map);
+
+                UnloadTexture(map_texture);
+                map_texture = LoadTextureFromImage(c->bw_map);
+
+                state = LEARN;
+            } 
+        }
+
+        DrawRectangleRounded(learn_button, 0.5, 10, color);
+        float fontsize = 40 / camera.zoom;
+        const char* text = "Learn";
+        Vector2 text_len = MeasureTextEx(font, text, fontsize, 0);
+
+        Vector2 text_pos = CLITERAL(Vector2) {
+            learn_button.x + 0.5 * learn_button.width - 0.5 * text_len.x, 
+            learn_button.y + 0.5 * learn_button.height - 0.5 * text_len.y
+        };
+
+        BeginShaderMode(shader);
+        DrawTextEx(font, text, text_pos, fontsize, 0, WHITE);
+        EndShaderMode();
+    }
+}
+
 int main()
 {
     srand(time(NULL));
     stbds_rand_seed(time(NULL));
 
-    Country country_item            = {0};
-    country_item.name               = "Mexico";
-    country_item.color_map_filename = "resources/mexico-colored.png";
-    country_item.bw_map_filename    = "resources/mexico-black-white.png";
-    country_item.color_map          = LoadImage(country_item.color_map_filename);
-    country_item.bw_map             = LoadImage(country_item.bw_map_filename);
-    ImageFormat(&country_item.bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-
-    assert((country_item.color_map.width == country_item.bw_map.width) && 
-           (country_item.color_map.height == country_item.bw_map.height));
-    da_append(&COUNTRIES, country_item);
-
-    country_item.name               = "Brazil";
-    country_item.color_map_filename = "resources/brazil-colored.png";
-    country_item.bw_map_filename    = "resources/brazil-black-white.png";
-    country_item.color_map          = LoadImage(country_item.color_map_filename);
-    country_item.bw_map             = LoadImage(country_item.bw_map_filename);
-    ImageFormat(&country_item.bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-
-    assert((country_item.color_map.width == country_item.bw_map.width) && 
-           (country_item.color_map.height == country_item.bw_map.height));
-    da_append(&COUNTRIES, country_item);
-
-    country_item.name               = "Japan";
-    country_item.color_map_filename = "resources/japan-colored.png";
-    country_item.bw_map_filename    = "resources/japan-black-white.png";
-    country_item.color_map          = LoadImage(country_item.color_map_filename);
-    country_item.bw_map             = LoadImage(country_item.bw_map_filename);
-    ImageFormat(&country_item.bw_map, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-
-    assert((country_item.color_map.width == country_item.bw_map.width) && 
-           (country_item.color_map.height == country_item.bw_map.height));
-    da_append(&COUNTRIES, country_item);
+    load_country("Mexico");
+    load_country("Brazil");
+    load_country("Japan");
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
@@ -820,16 +931,13 @@ int main()
 
     while (!WindowShouldClose()) {
         if (IsKeyDown(KEY_R)) {
-            Country *country = &COUNTRIES.items[active_map];
-            country->bw_map = LoadImage(country->bw_map_filename);
-            map_texture = LoadTextureFromImage(country->bw_map);
+            Country* c = reload_country(active_map);
+            map_texture = LoadTextureFromImage(c->bw_map);
     
             reset_provinces();
 
             hidden_province = select_random_province();
             error_counter = 0; 
-
-            state = QUIZ;
         }
            
         if (IsKeyDown(KEY_L)) {
@@ -899,14 +1007,21 @@ int main()
             CLITERAL(Vector2) {map_texture.width / 2, map_texture.height / 2}, 0.0f, WHITE);
         */
 
-        panel_countries(CLITERAL(Rectangle) {
+        countries_panel(CLITERAL(Rectangle) {
             .x = 0, 
             .y = 0,
-            .width = PANEL_WIDTH * GetScreenWidth(),
-            .height = GetScreenHeight()
+            .width = COUNTRIES_PANEL_WIDTH * GetScreenWidth(),
+            .height = COUNTRIES_PANEL_HEIGHT * GetScreenHeight()
         }, &hidden_province); 
-        //printf("main loop state = %d\n", state);
-        
+       
+        float padding = 0.01;
+        control_panel(CLITERAL(Rectangle) {
+            .x = 0,
+            .y = (COUNTRIES_PANEL_HEIGHT + padding) * GetScreenHeight(),
+            .width = COUNTRIES_PANEL_WIDTH * GetScreenWidth(),
+            .height = (1.0 - COUNTRIES_PANEL_HEIGHT - 2*padding) * GetScreenHeight()
+        }); 
+
         Rec rec = (Rec) {
             .ul = CLITERAL(Vector2) {posx, posy},
             .lr = CLITERAL(Vector2) { 
