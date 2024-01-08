@@ -12,9 +12,6 @@
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
        
-//#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
 #include "raylib.h"
 #include "raymath.h"
 
@@ -29,7 +26,7 @@
 
 #define FONT_SIZE_LOAD 160 
 
-#define MIN_CAMERA_ZOOM 0.9f
+#define MIN_CAMERA_ZOOM 0.6f
 #define MAX_CAMERA_ZOOM 3.0f
 
 #define HUD_LIFETIME 0.7 
@@ -141,6 +138,8 @@ typedef enum {
     MAP_MEXICO = 0,
     MAP_BRAZIL,
     MAP_JAPAN,
+    MAP_PHILLIPINES_ISLANDS,
+    MAP_MALAYSIA,
 } ActiveMap;
 
 Font font = {0};
@@ -152,6 +151,7 @@ ActiveMap active_map = MAP_MEXICO; // counter in the COUNTRIES array
 
 typedef struct {
     char *name;
+    char *display_name;
 
     char* color_map_filename;
     Image color_map;
@@ -168,12 +168,17 @@ typedef struct {
 
 Countries COUNTRIES = {0};
 
-Country* load_country(const char* country_name)
+Country* load_country(const char* country_name, const char* display_name)
 {
+    // TODO: implement arena allocator to hold all these random strings
+    //       instead of malloc-ing
     Country country_item = {0};
    
     country_item.name = malloc(TextLength(country_name) + 1);
-    TextCopy(country_item.name, country_name); 
+    TextCopy(country_item.name, country_name);
+
+    country_item.display_name = malloc(TextLength(display_name) + 1);
+    TextCopy(country_item.display_name, display_name); 
 
     const char *tmp;    
     tmp = TextFormat("resources/%s-colored.png", TextToLower(country_item.name));
@@ -329,6 +334,47 @@ void fill_provinces(int country_counter) {
             hmput(PROVINCES, 0x0000ffff, "Okinawa");
             assert(hmlen(PROVINCES) == 47);
             break;
+        }
+
+        case MAP_PHILLIPINES_ISLANDS: {
+            hmput(PROVINCES, 0x0000ffff, "Luzon");
+            hmput(PROVINCES, 0x000080ff, "Mindoro");
+            hmput(PROVINCES, 0x008000ff, "Masbate");
+            hmput(PROVINCES, 0x800000ff, "Samar");
+            hmput(PROVINCES, 0x800080ff, "Panay");
+            hmput(PROVINCES, 0x804000ff, "Palawan");
+            hmput(PROVINCES, 0x00ffffff, "Negros");
+            hmput(PROVINCES, 0xff0000ff, "Cebu");
+            hmput(PROVINCES, 0xffff00ff, "Bohol");
+            hmput(PROVINCES, 0x808000ff, "Leyte");
+            hmput(PROVINCES, 0x008080ff, "Mindanao");
+            assert(hmlen(PROVINCES) == 11);
+            break;
+        }
+
+        case MAP_MALAYSIA: {
+            hmput(PROVINCES, 0x808080ff, "Perlis");
+            hmput(PROVINCES, 0xff0000ff, "Penang");
+            hmput(PROVINCES, 0x800000ff, "Kedah");
+            hmput(PROVINCES, 0x808000ff, "Perak");
+            hmput(PROVINCES, 0xffff00ff, "Kelantan");
+            hmput(PROVINCES, 0x008000ff, "Teregganu");
+            hmput(PROVINCES, 0x00ff00ff, "Pahang");
+            hmput(PROVINCES, 0x008080ff, "Selangor");
+            hmput(PROVINCES, 0x00ffffff, "Negeri Sembilan");
+            hmput(PROVINCES, 0x000080ff, "Malacca");
+            hmput(PROVINCES, 0x0000ffff, "Johor");
+            hmput(PROVINCES, 0x800080ff, "Sarawak");
+            hmput(PROVINCES, 0xff00ffff, "Sabah");
+            hmput(PROVINCES, 0x4000ffff, "Kuala Lumpur");
+            hmput(PROVINCES, 0xff0080ff, "Putrajaya"); 
+            hmput(PROVINCES, 0x804000ff, "Labuan"); 
+            assert(hmlen(PROVINCES) == 16);
+            break;
+        }
+
+        default: {
+            assert(false);
         }
     } 
 
@@ -668,13 +714,13 @@ skip_if:
             float fontsize = HUD_LARGE_FONTSIZE / camera.zoom;
             Vector2 text_len = MeasureTextEx(font, text, fontsize, 0);
 
-            Vector2 title_pos = GetScreenToWorld2D(CLITERAL(Vector2) {
+            Vector2 text_pos = GetScreenToWorld2D(CLITERAL(Vector2) {
                 GetScreenWidth()/2 - text_len.x/2, 
                 GetScreenHeight()/2 - text_len.y/2 
             }, camera);
 
             BeginShaderMode(shader);
-            DrawTextEx(font, text, title_pos, fontsize, 0, RED);
+            DrawTextEx(font, text, text_pos, fontsize, 0, RED);
             EndShaderMode();
         } else {
             warning_msg_lifetime = HUD_LIFETIME;
@@ -761,8 +807,12 @@ void countries_panel(Rectangle panel_boundary, Province **hidden_province)
 
                 Country* c = reload_country((size_t) active_map);
                 map_texture = LoadTextureFromImage(c->bw_map);
-            
+       
                 fill_provinces(active_map);
+
+                if (state == VICTORY) {
+                    state = QUIZ;
+                }
 
                 *hidden_province = select_random_province();
 
@@ -773,16 +823,37 @@ void countries_panel(Rectangle panel_boundary, Province **hidden_province)
         }
 
         DrawRectangleRounded(menu_entry, 0.5, 10, color);
+        
         float fontsize = 50 / camera.zoom;
-        Vector2 name_len = MeasureTextEx(font, c->name, fontsize, 0);
-    
+        
+        float line_spacing = 0;
+        // TODO: check for multiple newlines
+        if (TextFindIndex(c->display_name, "\n") > 0) line_spacing = 0.55 * fontsize;
+        SetTextLineSpacing(line_spacing);
+
+        Vector2 name_len = MeasureTextEx(font, c->display_name, fontsize, 0);
+        name_len.y += line_spacing;
+   
+        // TODO: the button label is jerky when zooming. No idea why..
+
+        int it = 0;
+        while ((name_len.y > menu_entry.height) || (name_len.x > menu_entry.width)) {
+            fontsize -= 1.0;
+
+            name_len = MeasureTextEx(font, c->display_name, fontsize, 0);
+            name_len.y += line_spacing;     
+            
+            if (it > 10) break;
+            it++;
+        }
+
         Vector2 name_pos = CLITERAL(Vector2) {
-            menu_entry.x + 0.5 * menu_entry.width - 0.5 * name_len.x, 
-            menu_entry.y + 0.5 * menu_entry.height - 0.5 * name_len.y
+            menu_entry.x + menu_entry.width/2 - name_len.x/2, 
+            menu_entry.y + menu_entry.height/2 - name_len.y/2
         };
 
         BeginShaderMode(shader);
-        DrawTextEx(font, c->name, name_pos, fontsize, 0, WHITE);
+        DrawTextEx(font, c->display_name, name_pos, fontsize, 0, WHITE);
         EndShaderMode();
     }
 }
@@ -884,9 +955,11 @@ int main()
     srand(time(NULL));
     stbds_rand_seed(time(NULL));
 
-    load_country("Mexico");
-    load_country("Brazil");
-    load_country("Japan");
+    load_country("Mexico", "Mexico");
+    load_country("Brazil", "Brazil");
+    load_country("Japan", "Japan");
+    load_country("Phillipines-islands", "Phillipines\nIslands");
+    load_country("Malaysia", "Malaysia");
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
@@ -913,7 +986,7 @@ int main()
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
 
     RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
-    //SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
+    SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
 
     fill_provinces(active_map);
 
@@ -924,7 +997,7 @@ int main()
     }
 
     map_texture = LoadTextureFromImage(COUNTRIES.items[active_map].bw_map);
-    //SetTextureFilter(map_texture, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(map_texture, TEXTURE_FILTER_BILINEAR);
 
     Province* hidden_province = select_random_province();
     
@@ -1072,7 +1145,17 @@ int main()
     UnloadRenderTexture(canvas);
     UnloadShader(shader);
 
-    // TODO: unload COUNTRIES
+    for (size_t i = 0; i < COUNTRIES.count; ++i) {
+        Country *c = &COUNTRIES.items[i];
+        UnloadImage(c->bw_map);
+        UnloadImage(c->color_map);
+        free(c->name);
+        free(c->display_name);
+        free(c->color_map_filename);
+        free(c->bw_map_filename);
+    }
+    free(COUNTRIES.items);
+
 
     CloseWindow();
 
