@@ -29,4 +29,15 @@ The application needs `resources` to be present in the folder.
 - [Mexico map](https://www.geoguessr.com/pdf/4078)
 - [Japan map](https://vemaps.com/japan/jp-02)
 - [Phillipines islands map](https://vemaps.com/phillipines/ph-01)
-- [Malaysia map](https://vemaps.com/malaysia/my-02) 
+- [Malaysia map](https://vemaps.com/malaysia/my-02)
+
+# Developer notes
+
+The project can be compiled to WebAssembly to run on Web using `emscripten SDK`.
+The proper environment needed to find the `emcc` compiler provided by `emscripten`. Then WebAssembly can be used as a target in the `build` script. 
+
+```console 
+source ./emsdk/emsdk_env.sh
+```
+
+See the further [explanation](https://github.com/raysan5/raylib/wiki/Working-for-Web-(HTML5)#3-build-examples-for-the-web) provided by raysan.  
