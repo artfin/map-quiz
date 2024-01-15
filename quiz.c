@@ -15,6 +15,10 @@
 #include "raylib.h"
 #include "raymath.h"
 
+#if defined(PLATFORM_WEB)
+    #include <emscripten/emscripten.h>
+#endif
+
 #if defined(PLATFORM_DESKTOP)
    #define GLSL_VERSION 330
 #else 
@@ -100,6 +104,7 @@ typedef struct {
 } Province;
     
 Province *PROVINCES = NULL;
+Province *hidden_province = NULL;
 
 bool any_provinces_left_to_guess()
 {
@@ -148,6 +153,7 @@ Texture2D map_texture = {0};
 Camera2D camera = {0};
 GameState state = QUIZ;
 ActiveMap active_map = MAP_MEXICO; // counter in the COUNTRIES array 
+RenderTexture2D canvas = {0};
 
 typedef struct {
     char *name;
@@ -950,6 +956,146 @@ void control_panel(Rectangle panel_boundary)
     }
 }
 
+void update_draw_frame()
+{
+    if (IsKeyDown(KEY_R)) {
+        Country* c = reload_country(active_map);
+        map_texture = LoadTextureFromImage(c->bw_map);
+
+        reset_provinces();
+
+        hidden_province = select_random_province();
+        error_counter = 0; 
+    }
+
+    if (IsKeyDown(KEY_L)) {
+        Country *country = &COUNTRIES.items[active_map];
+        country->bw_map = LoadImage(country->bw_map_filename);
+        map_texture = LoadTextureFromImage(country->bw_map);
+
+        reset_provinces();
+        error_counter = 0;
+        hidden_province = NULL;
+
+        state = LEARN;
+    }
+
+    if (IsKeyDown(KEY_S)) {
+        printf("cam.offset.x: %.5lf; cam.offset.y: %.5lf\n", camera.offset.x, camera.offset.y);
+        printf("cam.target.x: %.5lf; cam.target.y: %.5lf\n", camera.target.x, camera.target.y);
+        printf("cam.zoom: %.5lf\n", camera.zoom);
+    }
+
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+        Vector2 delta = GetMouseDelta();
+        delta = Vector2Scale(delta, -1.0f / camera.zoom);
+
+        //Vector2 new_camera_target = Vector2Add(camera.target, delta);
+        //printf("new_camera_target: %.5lf, %.5lf\n", new_camera_target.x, new_camera_target.y);
+
+        camera.target = Vector2Add(camera.target, delta);
+        //if (new_camera_target.x > 800.0) camera.target.x = 800.0; 
+    }
+
+    float wheel = GetMouseWheelMove();
+
+    if (wheel != 0) {
+        Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+        camera.offset = GetMousePosition();
+        camera.zoom += wheel * 0.2f;
+        camera.target = mouseWorldPos;
+        if (camera.zoom < MIN_CAMERA_ZOOM) camera.zoom = MIN_CAMERA_ZOOM; 
+        if (camera.zoom > MAX_CAMERA_ZOOM) camera.zoom = MAX_CAMERA_ZOOM; 
+    }
+
+    if (IsWindowResized()) {
+        UnloadRenderTexture(canvas);
+        canvas = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
+    }
+
+    BeginTextureMode(canvas); 
+    BeginMode2D(camera);
+
+    ClearBackground(COLOR_BACKGROUND);
+
+    float posx = GetScreenWidth()/2 - DEFAULT_IMAGE_SCALE * map_texture.width/2;
+    float posy = GetScreenHeight()/2 - DEFAULT_IMAGE_SCALE * map_texture.height/2;
+    DrawTextureEx(map_texture, CLITERAL(Vector2){posx, posy}, 0.0, DEFAULT_IMAGE_SCALE, WHITE);
+
+    /*
+       Rectangle map_rectangle = CLITERAL(Rectangle) {
+       .x = PANEL_WIDTH, 
+       .y = 0.0, 
+       .width = GetScreenWidth() - PANEL_WIDTH,
+       .height = GetScreenHeight()
+       };
+
+       DrawTexturePro(map_texture, CLITERAL(Rectangle) { 0.0f, 0.0f, map_texture.width, map_texture.height }, 
+       CLITERAL(Rectangle) { GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f, map_texture.width, map_texture.height }, 
+       CLITERAL(Vector2) {map_texture.width / 2, map_texture.height / 2}, 0.0f, WHITE);
+       */
+
+    countries_panel(CLITERAL(Rectangle) {
+            .x = 0, 
+            .y = 0,
+            .width = COUNTRIES_PANEL_WIDTH * GetScreenWidth(),
+            .height = COUNTRIES_PANEL_HEIGHT * GetScreenHeight()
+            }, &hidden_province); 
+
+    float padding = 0.01;
+    control_panel(CLITERAL(Rectangle) {
+            .x = 0,
+            .y = (COUNTRIES_PANEL_HEIGHT + padding) * GetScreenHeight(),
+            .width = COUNTRIES_PANEL_WIDTH * GetScreenWidth(),
+            .height = (1.0 - COUNTRIES_PANEL_HEIGHT - 2*padding) * GetScreenHeight()
+            }); 
+
+    Rec rec = (Rec) {
+        .ul = CLITERAL(Vector2) {posx, posy},
+            .lr = CLITERAL(Vector2) { 
+                posx + DEFAULT_IMAGE_SCALE * map_texture.width,
+                posy + DEFAULT_IMAGE_SCALE * map_texture.height
+            },
+            .width = map_texture.width,
+            .height = map_texture.height
+    }; 
+
+    switch (state) {
+        case QUIZ: {
+                       quiz(&rec, &hidden_province);
+                       break;
+                   }
+
+        case LEARN: {
+                        learn(&rec); 
+                        break;
+                    }
+
+        case VICTORY: {
+                          victory();
+                          break;
+                      }
+
+        default: {
+                     assert(false);
+                 }
+    }
+
+    EndMode2D();
+    EndTextureMode();
+
+    BeginDrawing();
+    // flip texture 
+    DrawTexturePro(canvas.texture,
+            CLITERAL(Rectangle){0, 0, canvas.texture.width, -canvas.texture.height },
+            CLITERAL(Rectangle){0, 0, GetScreenWidth(), GetScreenHeight()}, 
+            CLITERAL(Vector2) {0, 0},
+            0, WHITE);
+
+    EndDrawing();
+}
+
+
 int main()
 {
     srand(time(NULL));
@@ -967,7 +1113,6 @@ int main()
     
     size_t factor = 80;
     InitWindow(16*factor, 9*factor, "Map quiz");
-    SetTargetFPS(60);
     SetExitKey(KEY_Q);
 
     int fileSize = 0;
@@ -985,7 +1130,7 @@ int main()
     shader = LoadShader(0, TextFormat("resources/shaders/glsl%i/sdf.fs", GLSL_VERSION));
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
 
-    RenderTexture2D canvas = LoadRenderTexture(16*factor, 9*factor);
+    canvas = LoadRenderTexture(16*factor, 9*factor);
     SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
 
     fill_provinces(active_map);
@@ -999,146 +1144,17 @@ int main()
     map_texture = LoadTextureFromImage(COUNTRIES.items[active_map].bw_map);
     SetTextureFilter(map_texture, TEXTURE_FILTER_BILINEAR);
 
-    Province* hidden_province = select_random_province();
+    hidden_province = select_random_province();
     
-
+#if defined(PLATFORM_WEB)
+    emscripten_set_main_loop(update_draw_frame, 0, 1);
+#else
+    SetTargetFPS(60);
+    
     while (!WindowShouldClose()) {
-        if (IsKeyDown(KEY_R)) {
-            Country* c = reload_country(active_map);
-            map_texture = LoadTextureFromImage(c->bw_map);
-    
-            reset_provinces();
-
-            hidden_province = select_random_province();
-            error_counter = 0; 
-        }
-           
-        if (IsKeyDown(KEY_L)) {
-            Country *country = &COUNTRIES.items[active_map];
-            country->bw_map = LoadImage(country->bw_map_filename);
-            map_texture = LoadTextureFromImage(country->bw_map);
-
-            reset_provinces();
-            error_counter = 0;
-            hidden_province = NULL;
-        
-            state = LEARN;
-        }
-
-        if (IsKeyDown(KEY_S)) {
-            printf("cam.offset.x: %.5lf; cam.offset.y: %.5lf\n", camera.offset.x, camera.offset.y);
-            printf("cam.target.x: %.5lf; cam.target.y: %.5lf\n", camera.target.x, camera.target.y);
-            printf("cam.zoom: %.5lf\n", camera.zoom);
-        }
-
-        if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-            Vector2 delta = GetMouseDelta();
-            delta = Vector2Scale(delta, -1.0f / camera.zoom);
-            
-            //Vector2 new_camera_target = Vector2Add(camera.target, delta);
-            //printf("new_camera_target: %.5lf, %.5lf\n", new_camera_target.x, new_camera_target.y);
-            
-            camera.target = Vector2Add(camera.target, delta);
-            //if (new_camera_target.x > 800.0) camera.target.x = 800.0; 
-        }
-
-        float wheel = GetMouseWheelMove();
-
-        if (wheel != 0) {
-            Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
-            camera.offset = GetMousePosition();
-            camera.zoom += wheel * 0.2f;
-            camera.target = mouseWorldPos;
-            if (camera.zoom < MIN_CAMERA_ZOOM) camera.zoom = MIN_CAMERA_ZOOM; 
-            if (camera.zoom > MAX_CAMERA_ZOOM) camera.zoom = MAX_CAMERA_ZOOM; 
-        }
-
-        if (IsWindowResized()) {
-            UnloadRenderTexture(canvas);
-            canvas = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
-        }
-
-        BeginTextureMode(canvas); 
-        BeginMode2D(camera);
-
-        ClearBackground(COLOR_BACKGROUND);
-
-        float posx = GetScreenWidth()/2 - DEFAULT_IMAGE_SCALE * map_texture.width/2;
-        float posy = GetScreenHeight()/2 - DEFAULT_IMAGE_SCALE * map_texture.height/2;
-        DrawTextureEx(map_texture, CLITERAL(Vector2){posx, posy}, 0.0, DEFAULT_IMAGE_SCALE, WHITE);
-            
-        /*
-        Rectangle map_rectangle = CLITERAL(Rectangle) {
-            .x = PANEL_WIDTH, 
-            .y = 0.0, 
-            .width = GetScreenWidth() - PANEL_WIDTH,
-            .height = GetScreenHeight()
-        };
- 
-        DrawTexturePro(map_texture, CLITERAL(Rectangle) { 0.0f, 0.0f, map_texture.width, map_texture.height }, 
-            CLITERAL(Rectangle) { GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f, map_texture.width, map_texture.height }, 
-            CLITERAL(Vector2) {map_texture.width / 2, map_texture.height / 2}, 0.0f, WHITE);
-        */
-
-        countries_panel(CLITERAL(Rectangle) {
-            .x = 0, 
-            .y = 0,
-            .width = COUNTRIES_PANEL_WIDTH * GetScreenWidth(),
-            .height = COUNTRIES_PANEL_HEIGHT * GetScreenHeight()
-        }, &hidden_province); 
-       
-        float padding = 0.01;
-        control_panel(CLITERAL(Rectangle) {
-            .x = 0,
-            .y = (COUNTRIES_PANEL_HEIGHT + padding) * GetScreenHeight(),
-            .width = COUNTRIES_PANEL_WIDTH * GetScreenWidth(),
-            .height = (1.0 - COUNTRIES_PANEL_HEIGHT - 2*padding) * GetScreenHeight()
-        }); 
-
-        Rec rec = (Rec) {
-            .ul = CLITERAL(Vector2) {posx, posy},
-            .lr = CLITERAL(Vector2) { 
-                posx + DEFAULT_IMAGE_SCALE * map_texture.width,
-                posy + DEFAULT_IMAGE_SCALE * map_texture.height
-            },
-            .width = map_texture.width,
-            .height = map_texture.height
-        }; 
-
-        switch (state) {
-            case QUIZ: {
-                quiz(&rec, &hidden_province);
-                break;
-            }
-
-            case LEARN: {
-                learn(&rec); 
-                break;
-            }
-            
-            case VICTORY: {
-                victory();
-                break;
-            }
-
-            default: {
-                assert(false);
-            }
-        }
-
-        EndMode2D();
-        EndTextureMode();
-
-        BeginDrawing();
-        // flip texture 
-        DrawTexturePro(canvas.texture,
-            CLITERAL(Rectangle){0, 0, canvas.texture.width, -canvas.texture.height },
-            CLITERAL(Rectangle){0, 0, GetScreenWidth(), GetScreenHeight()}, 
-            CLITERAL(Vector2) {0, 0},
-            0, WHITE);
-                
-        EndDrawing();
-    } 
+        update_draw_frame();
+    }
+#endif 
 
     UnloadFont(font);    
     UnloadTexture(map_texture); 
@@ -1155,7 +1171,6 @@ int main()
         free(c->bw_map_filename);
     }
     free(COUNTRIES.items);
-
 
     CloseWindow();
 
